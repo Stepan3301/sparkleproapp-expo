@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,27 +21,18 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSimpleTranslation } from '../../utils/i18n';
 
 const { width } = Dimensions.get('window');
 
-// ─── Validation Schemas ────────────────────────────────────────────────────────
-const loginSchema = z.object({
-  email: z.string().email('Please enter a valid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-
-const signupSchema = z.object({
-  fullName: z.string().min(2, 'Full name must be at least 2 characters'),
-  email: z.string().email('Please enter a valid email address'),
-  phone: z.string().min(7, 'Please enter a valid phone number'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  termsAccepted: z.boolean().refine(val => val === true, {
-    message: 'You must accept the Terms and Conditions',
-  }),
-});
-
-type LoginFormData = z.infer<typeof loginSchema>;
-type SignupFormData = z.infer<typeof signupSchema>;
+type LoginFormData = { email: string; password: string };
+type SignupFormData = {
+  fullName: string;
+  email: string;
+  phone: string;
+  password: string;
+  termsAccepted: boolean;
+};
 
 // ─── Glassmorphism Input ───────────────────────────────────────────────────────
 interface StyledInputProps {
@@ -141,49 +132,60 @@ const inputStyles = StyleSheet.create({
 });
 
 // ─── Terms Modal ───────────────────────────────────────────────────────────────
-const TermsModal = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => (
-  <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen">
-    <View style={termsStyles.overlay}>
-      <View style={termsStyles.container}>
-        {/* Header */}
-        <LinearGradient
-          colors={['#0D1B2A', '#162035']}
-          style={termsStyles.header}
-        >
-          <Text style={termsStyles.headerTitle}>Terms and Conditions</Text>
-          <TouchableOpacity onPress={onClose} style={termsStyles.closeBtn}>
-            <Ionicons name="close" size={18} color="#F1F5F9" />
-          </TouchableOpacity>
-        </LinearGradient>
+const TermsModal = ({
+  visible,
+  onClose,
+  t,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  t: (key: string, fallback?: string) => string;
+}) => {
+  const sections = useMemo(
+    () =>
+      [1, 2, 3, 4, 5, 6, 7].map((n) => ({
+        title: t(`ui.authExtra.terms${n}Title`, `Terms section ${n}`),
+        body: t(`ui.authExtra.terms${n}Body`, ''),
+      })),
+    [t],
+  );
 
-        <ScrollView style={termsStyles.body} showsVerticalScrollIndicator={false}>
-          {[
-            ['1. Service Agreement', 'By using SparklePro cleaning services, you agree to our professional cleaning standards and service delivery terms. Our team is committed to providing high-quality cleaning services for residential and commercial properties.'],
-            ['2. Booking and Scheduling', 'All bookings must be made through our platform. We require at least 24 hours notice for booking confirmations and 4 hours notice for cancellations. Same-day bookings are subject to availability.'],
-            ['3. Payment Terms', 'Payment is due upon completion of services unless otherwise arranged. We accept various payment methods including credit cards and digital payments. All prices are subject to applicable taxes.'],
-            ['4. Property Access', 'Customers must provide secure access to the property during scheduled service times. SparklePro is not responsible for lost keys or access issues.'],
-            ['5. Service Quality', "We guarantee satisfaction with our cleaning services. If you're not satisfied, please contact us within 24 hours of service completion."],
-            ['6. Liability', 'SparklePro maintains comprehensive insurance coverage for all cleaning operations. Our liability is limited to the cost of the cleaning service.'],
-            ['7. Privacy', 'We respect your privacy and protect your personal information in accordance with applicable data protection laws.'],
-          ].map(([title, text]) => (
-            <View key={title} style={termsStyles.section}>
-              <Text style={termsStyles.sectionTitle}>{title}</Text>
-              <Text style={termsStyles.sectionText}>{text}</Text>
-            </View>
-          ))}
-        </ScrollView>
+  return (
+    <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen">
+      <View style={termsStyles.overlay}>
+        <View style={termsStyles.container}>
+          <LinearGradient colors={['#0D1B2A', '#162035']} style={termsStyles.header}>
+            <Text style={termsStyles.headerTitle}>
+              {t('ui.termsAndConditions', 'Terms and Conditions')}
+            </Text>
+            <TouchableOpacity onPress={onClose} style={termsStyles.closeBtn}>
+              <Ionicons name="close" size={18} color="#F1F5F9" />
+            </TouchableOpacity>
+          </LinearGradient>
 
-        <View style={termsStyles.footer}>
-          <TouchableOpacity onPress={onClose} style={termsStyles.acceptBtn}>
-            <LinearGradient colors={['#2563EB', '#3B82F6']} style={termsStyles.acceptGradient}>
-              <Text style={termsStyles.acceptBtnText}>Got it, Close</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          <ScrollView style={termsStyles.body} showsVerticalScrollIndicator={false}>
+            {sections.map((section) => (
+              <View key={section.title} style={termsStyles.section}>
+                <Text style={termsStyles.sectionTitle}>{section.title}</Text>
+                <Text style={termsStyles.sectionText}>{section.body}</Text>
+              </View>
+            ))}
+          </ScrollView>
+
+          <View style={termsStyles.footer}>
+            <TouchableOpacity onPress={onClose} style={termsStyles.acceptBtn}>
+              <LinearGradient colors={['#2563EB', '#3B82F6']} style={termsStyles.acceptGradient}>
+                <Text style={termsStyles.acceptBtnText}>
+                  {t('ui.gotItClose', 'Got it, Close')}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
-    </View>
-  </Modal>
-);
+    </Modal>
+  );
+};
 
 const termsStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
@@ -227,6 +229,7 @@ interface AuthScreenProps {
 
 const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
+  const { t } = useSimpleTranslation();
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [showLoginPassword,  setShowLoginPassword]  = useState(false);
@@ -240,7 +243,40 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
 
   const { signIn, signUp, loginAsGuest } = useAuth();
 
-  const loginForm  = useForm<LoginFormData>({ resolver: zodResolver(loginSchema) });
+  const loginSchema = useMemo(
+    () =>
+      z.object({
+        email: z
+          .string()
+          .min(3, t('ui.authExtra.validationLogin', 'Enter your email or login'))
+          .refine(
+            (v) => {
+              const trimmed = v.trim();
+              if (trimmed.includes('@')) return z.string().email().safeParse(trimmed).success;
+              return /^[a-z0-9]{3,}$/.test(trimmed.toLowerCase());
+            },
+            t('ui.authExtra.validationLogin', 'Enter a valid email or login'),
+          ),
+        password: z.string().min(6, t('ui.authExtra.validationPassword', 'Password must be at least 6 characters')),
+      }),
+    [t],
+  );
+
+  const signupSchema = useMemo(
+    () =>
+      z.object({
+        fullName: z.string().min(2, t('ui.authExtra.validationName', 'Full name must be at least 2 characters')),
+        email: z.string().email(t('ui.authExtra.validationEmail', 'Please enter a valid email address')),
+        phone: z.string().min(7, t('ui.authExtra.validationPhone', 'Please enter a valid phone number')),
+        password: z.string().min(6, t('ui.authExtra.validationPassword', 'Password must be at least 6 characters')),
+        termsAccepted: z.boolean().refine((val) => val === true, {
+          message: t('ui.authExtra.validationTerms', 'You must accept the Terms and Conditions'),
+        }),
+      }),
+    [t],
+  );
+
+  const loginForm = useForm<LoginFormData>({ resolver: zodResolver(loginSchema) });
   const signupForm = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
     defaultValues: { termsAccepted: false },
@@ -265,7 +301,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
       // AppNavigator auto-routes based on isAdmin / isGuest state —
       // no manual navigation needed here.
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'Invalid email or password. Please try again.');
+      Alert.alert(
+        t('ui.authExtra.loginFailed', 'Login Failed'),
+        error.message || t('ui.authExtra.invalidCredentials', 'Invalid email or password. Please try again.'),
+      );
     } finally {
       setIsLoading(false);
     }
@@ -276,12 +315,15 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
     try {
       await signUp(data.email, data.password, data.fullName);
       Alert.alert(
-        '🎉 Account Created!',
-        'Please check your email to confirm your account, then sign in.',
-        [{ text: 'Sign In', onPress: () => switchTab(true) }]
+        t('ui.authExtra.accountCreatedTitle', '🎉 Account Created!'),
+        t('ui.authExtra.checkEmail', 'Please check your email to confirm your account, then sign in.'),
+        [{ text: t('ui.signIn', 'Sign In'), onPress: () => switchTab(true) }],
       );
     } catch (error: any) {
-      Alert.alert('Signup Failed', error.message || 'Failed to create account. Please try again.');
+      Alert.alert(
+        t('ui.authExtra.signupFailed', 'Signup Failed'),
+        error.message || t('ui.authExtra.signupFailedMessage', 'Failed to create account. Please try again.'),
+      );
     } finally {
       setIsLoading(false);
     }
@@ -330,8 +372,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
             <View style={styles.logoIconWrapper}>
               <Text style={styles.logoIcon}>✨</Text>
             </View>
-            <Text style={styles.logoTitle}>SparklePro</Text>
-            <Text style={styles.logoSubtitle}>Professional home cleaning service</Text>
+            <Text style={styles.logoTitle}>{t('app.name', 'SparklePro')}</Text>
+            <Text style={styles.logoSubtitle}>{t('app.tagline', 'Professional home cleaning service')}</Text>
           </View>
 
           {/* ── Glass Card ── */}
@@ -349,10 +391,14 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                 ]}
               />
               <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab(true)} activeOpacity={0.8}>
-                <Text style={[styles.tabText, isLogin && styles.tabTextActive]}>Sign In</Text>
+                <Text style={[styles.tabText, isLogin && styles.tabTextActive]}>
+                  {t('ui.signIn', 'Sign In')}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab(false)} activeOpacity={0.8}>
-                <Text style={[styles.tabText, !isLogin && styles.tabTextActive]}>Sign Up</Text>
+                <Text style={[styles.tabText, !isLogin && styles.tabTextActive]}>
+                  {t('ui.signUp', 'Sign Up')}
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -366,14 +412,14 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                     name="email"
                     render={({ field: { onChange, onBlur, value = '' }, fieldState: { error } }) => (
                       <StyledInput
-                        label="Email Address"
+                        label={t('auth.emailOrLogin', 'Email or Login')}
                         value={value}
                         onChangeText={onChange}
                         onBlur={onBlur}
-                        placeholder="Enter your email"
-                        keyboardType="email-address"
+                        placeholder={t('placeholders.emailOrLogin', 'Enter email or login')}
+                        keyboardType="default"
                         autoCapitalize="none"
-                        autoComplete="email"
+                        autoComplete="username"
                         error={error?.message}
                         iconName="mail-outline"
                       />
@@ -385,11 +431,11 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                     name="password"
                     render={({ field: { onChange, onBlur, value = '' }, fieldState: { error } }) => (
                       <StyledInput
-                        label="Password"
+                        label={t('auth.password', 'Password')}
                         value={value}
                         onChangeText={onChange}
                         onBlur={onBlur}
-                        placeholder="Enter your password"
+                        placeholder={t('placeholders.enterYourPassword', 'Enter your password')}
                         secureTextEntry={!showLoginPassword}
                         autoCapitalize="none"
                         error={error?.message}
@@ -408,7 +454,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                   />
 
                   <TouchableOpacity style={styles.forgotBtn} activeOpacity={0.7}>
-                    <Text style={styles.forgotText}>Forgot Password?</Text>
+                    <Text style={styles.forgotText}>{t('auth.forgotPassword', 'Forgot Password?')}</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -425,14 +471,14 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                     >
                       {isLoading
                         ? <ActivityIndicator color="#fff" />
-                        : <Text style={styles.submitText}>Sign In</Text>
+                        : <Text style={styles.submitText}>{t('ui.signIn', 'Sign In')}</Text>
                       }
                     </LinearGradient>
                   </TouchableOpacity>
 
                   <View style={styles.divider}>
                     <View style={styles.dividerLine} />
-                    <Text style={styles.dividerText}>or</Text>
+                    <Text style={styles.dividerText}>{t('ui.or', 'or')}</Text>
                     <View style={styles.dividerLine} />
                   </View>
 
@@ -442,7 +488,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                     activeOpacity={0.85}
                   >
                     <Ionicons name="person-outline" size={16} color="#94A3B8" style={{ marginRight: 8 }} />
-                    <Text style={styles.guestText}>Continue as Guest</Text>
+                    <Text style={styles.guestText}>{t('ui.continueAsGuest', 'Continue as Guest')}</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -453,11 +499,11 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                     name="fullName"
                     render={({ field: { onChange, onBlur, value = '' }, fieldState: { error } }) => (
                       <StyledInput
-                        label="Full Name"
+                        label={t('auth.fullName', 'Full Name')}
                         value={value}
                         onChangeText={onChange}
                         onBlur={onBlur}
-                        placeholder="Enter your full name"
+                        placeholder={t('placeholders.enterYourFullName', 'Enter your full name')}
                         autoCapitalize="words"
                         error={error?.message}
                         iconName="person-outline"
@@ -470,11 +516,11 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                     name="email"
                     render={({ field: { onChange, onBlur, value = '' }, fieldState: { error } }) => (
                       <StyledInput
-                        label="Email Address"
+                        label={t('auth.email', 'Email Address')}
                         value={value}
                         onChangeText={onChange}
                         onBlur={onBlur}
-                        placeholder="Enter your email"
+                        placeholder={t('placeholders.enterYourEmail', 'Enter your email')}
                         keyboardType="email-address"
                         autoCapitalize="none"
                         autoComplete="email"
@@ -489,7 +535,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                     name="phone"
                     render={({ field: { onChange, onBlur, value = '' }, fieldState: { error } }) => (
                       <StyledInput
-                        label="Phone Number"
+                        label={t('auth.phone', 'Phone Number')}
                         value={value}
                         onChangeText={onChange}
                         onBlur={onBlur}
@@ -506,11 +552,11 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                     name="password"
                     render={({ field: { onChange, onBlur, value = '' }, fieldState: { error } }) => (
                       <StyledInput
-                        label="Password"
+                        label={t('auth.password', 'Password')}
                         value={value}
                         onChangeText={onChange}
                         onBlur={onBlur}
-                        placeholder="Create a secure password"
+                        placeholder={t('placeholders.createSecurePassword', 'Create a secure password')}
                         secureTextEntry={!showSignupPassword}
                         autoCapitalize="none"
                         error={error?.message}
@@ -542,12 +588,12 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                           {value && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
                         </TouchableOpacity>
                         <Text style={styles.termsText}>
-                          I agree with{' '}
+                          {t('ui.agreeWith', 'I agree with')}{' '}
                           <Text
                             style={styles.termsLink}
                             onPress={() => setShowTermsModal(true)}
                           >
-                            Terms and Conditions
+                            {t('ui.termsAndConditions', 'Terms and Conditions')}
                           </Text>
                         </Text>
                         {error && (
@@ -573,7 +619,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
                     >
                       {isLoading
                         ? <ActivityIndicator color="#fff" />
-                        : <Text style={styles.submitText}>Create Account</Text>
+                        : <Text style={styles.submitText}>{t('ui.createAccount', 'Create Account')}</Text>
                       }
                     </LinearGradient>
                   </TouchableOpacity>
@@ -584,7 +630,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <TermsModal visible={showTermsModal} onClose={() => setShowTermsModal(false)} />
+      <TermsModal visible={showTermsModal} onClose={() => setShowTermsModal(false)} t={t} />
     </View>
   );
 };

@@ -75,7 +75,7 @@ export function recommendHours(serviceType: string, propertySize: string, cleane
   const efficiency = TEAM_EFFICIENCY[cleaners] ?? 1.0;
   let t = baseHours * efficiency + 0.5;
   t = Math.ceil(t * 2) / 2;
-  return Math.max(2.5, Math.min(7, t));
+  return Math.max(2, Math.min(7, t));
 }
 
 export function calculateCost(serviceType: string, cleaners: number, hours: number, withMaterials: boolean): number {

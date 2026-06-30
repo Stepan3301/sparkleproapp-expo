@@ -3,12 +3,15 @@ import { User } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { Profile } from '../types/booking';
+import { resolveCleanerAuthEmail } from '../utils/cleanerCredentials';
 
 interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
   isAdmin: boolean;
+  isCleaner: boolean;
+  cleanerId: string | null;
   isGuest: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName?: string) => Promise<void>;
@@ -33,13 +36,25 @@ const GUEST_KEY = 'isGuest';
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [cleanerId, setCleanerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isGuest, setIsGuest] = useState<boolean>(false);
 
-  // Memoize admin check to prevent unnecessary re-renders
-  const isAdmin = useMemo(() => {
-    return profile?.role === 'admin';
-  }, [profile?.role]);
+  const isAdmin = useMemo(() => profile?.role === 'admin', [profile?.role]);
+  const isCleaner = useMemo(() => profile?.role === 'cleaner', [profile?.role]);
+
+  const fetchCleanerId = useCallback(async (userId: string) => {
+    try {
+      const { data } = await supabase
+        .from('cleaners')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+      setCleanerId(data?.id ?? null);
+    } catch {
+      setCleanerId(null);
+    }
+  }, []);
 
   // NOTE: No loadGuestState effect here — onAuthStateChange fires INITIAL_SESSION
   // on mount and already reads AsyncStorage to restore guest mode. A separate
@@ -65,8 +80,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .insert({
               id: userId,
               role: 'customer' as const,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
             })
             .select()
             .single();
@@ -81,18 +94,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } else {
         setProfile(data);
+        if (data?.role === 'cleaner') {
+          void fetchCleanerId(userId);
+        } else {
+          setCleanerId(null);
+        }
       }
     } catch (error) {
       console.error('Error in fetchProfile:', error);
       // Don't throw error, just log it and continue
     }
-  }, []);
+  }, [fetchCleanerId]);
 
   // Optimized authentication functions with error handling
   const signIn = useCallback(async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+      const authEmail = resolveCleanerAuthEmail(email);
+      const { error } = await supabase.auth.signInWithPassword({
+        email: authEmail,
         password,
       });
 
@@ -164,6 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Always clear local state regardless of API response
       setUser(null);
       setProfile(null);
+      setCleanerId(null);
       setIsGuest(false);
       try {
         await AsyncStorage.removeItem(GUEST_KEY);
@@ -198,64 +218,102 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Optimized auth state change listener with error handling
   useEffect(() => {
     let mounted = true;
+    let authResolved = false;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const finishBootstrap = () => {
+      if (mounted && !authResolved) {
+        authResolved = true;
+        setLoading(false);
+      }
+    };
+
+    const applySession = (session: { user: User } | null, onComplete?: () => void) => {
+      if (!mounted) return;
+
+      const done = () => {
+        onComplete?.();
+      };
+
+      if (session?.user) {
+        setUser(session.user);
+        setIsGuest(false);
+        const userId = session.user.id;
+        setTimeout(() => {
+          if (!mounted) return;
+          void fetchProfile(userId);
+          void AsyncStorage.removeItem(GUEST_KEY);
+        }, 0);
+        done();
+        return;
+      }
+
+      void AsyncStorage.getItem(GUEST_KEY)
+        .then((guestValue) => {
+          if (!mounted) return;
+          const isGuestMode = guestValue === 'true';
+          if (isGuestMode) {
+            setIsGuest(true);
+            setUser(null);
+            setProfile(null);
+          } else {
+            setIsGuest(false);
+            setUser(null);
+            setProfile(null);
+          }
+        })
+        .catch(() => {
+          if (!mounted) return;
+          setIsGuest(false);
+          setUser(null);
+          setProfile(null);
+        })
+        .finally(done);
+    };
+
+    const bootstrapTimeout = setTimeout(() => {
+      console.warn('[Auth] Bootstrap timeout — continuing without blocking UI');
+      finishBootstrap();
+    }, 8000);
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
 
       console.log('Auth state change:', event, session?.user?.id);
 
       try {
-        if (session?.user) {
-          console.log('User authenticated, clearing guest mode and setting user');
-          setUser(session.user);
-          await fetchProfile(session.user.id);
-          setIsGuest(false);
-          try {
-            await AsyncStorage.removeItem(GUEST_KEY);
-          } catch {}
-        } else {
-          const guestValue = await AsyncStorage.getItem(GUEST_KEY);
-          const isGuestMode = guestValue === 'true';
-          if (isGuestMode) {
-            console.log('No session but guest mode active, keeping guest state');
-            setIsGuest(true);
-            setUser(null);
-            setProfile(null);
-          } else {
-            console.log('No session and not guest mode, clearing user');
-            setUser(null);
-            setProfile(null);
-            setIsGuest(false);
-          }
-        }
+        applySession(session, finishBootstrap);
       } catch (error) {
         console.error('Error in auth state change:', error);
-        // On error, fall back to guest mode to prevent app crash
         if (mounted) {
           setUser(null);
           setProfile(null);
           setIsGuest(true);
-          try {
-            await AsyncStorage.setItem(GUEST_KEY, 'true');
-          } catch {}
+          void AsyncStorage.setItem(GUEST_KEY, 'true');
         }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        finishBootstrap();
       }
     });
 
+    void supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (!mounted || authResolved) return;
+        applySession(session, finishBootstrap);
+      })
+      .catch((error) => {
+        console.error('[Auth] getSession failed:', error);
+        finishBootstrap();
+      });
+
     return () => {
       mounted = false;
+      clearTimeout(bootstrapTimeout);
       subscription.unsubscribe();
     };
   }, [fetchProfile]);
 
-  // NOTE: No separate getSession() call here.
-  // onAuthStateChange fires INITIAL_SESSION on mount which covers the
-  // initial session check. A second getSession() call would duplicate
-  // setUser() / fetchProfile() calls causing a render cascade.
+  // Removed duplicate getSession() note: backup getSession above is guarded by authResolved
+  // and only runs when onAuthStateChange has not already finished bootstrap.
 
   // Memoize context value to prevent unnecessary re-renders
   const contextValue = useMemo(() => ({
@@ -263,6 +321,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     profile,
     loading,
     isAdmin,
+    isCleaner,
+    cleanerId,
     isGuest,
     signIn,
     signUp,
@@ -270,7 +330,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signOut,
     loginAsGuest,
     exitGuestMode
-  }), [user, profile, loading, isAdmin, isGuest, signIn, signUp, signInWithGoogle, signOut, loginAsGuest, exitGuestMode]);
+  }), [user, profile, loading, isAdmin, isCleaner, cleanerId, isGuest, signIn, signUp, signInWithGoogle, signOut, loginAsGuest, exitGuestMode]);
 
   return (
     <AuthContext.Provider value={contextValue}>

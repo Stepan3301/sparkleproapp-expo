@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Switch, Alert, ActivityIndicator, Linking, Modal,
@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { useSimpleTranslation } from '../../utils/i18n';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -27,6 +28,7 @@ interface SectionItem {
 const PrivacySecurityScreen = ({ navigation }: { navigation: any }) => {
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
+  const { t } = useSimpleTranslation();
 
   const [twoFa, setTwoFa]         = useState(false);
   const [showPwModal, setShowPwModal] = useState(false);
@@ -38,20 +40,20 @@ const PrivacySecurityScreen = ({ navigation }: { navigation: any }) => {
 
   const handleChangePassword = async () => {
     if (!newPw || newPw !== confirmPw) {
-      Alert.alert('Error', 'New passwords do not match.'); return;
+      Alert.alert(t('common.error'), t('ui.privacy.passwordMismatch')); return;
     }
     if (newPw.length < 8) {
-      Alert.alert('Error', 'Password must be at least 8 characters.'); return;
+      Alert.alert(t('common.error'), t('ui.privacy.passwordTooShort')); return;
     }
     setPwLoading(true);
     try {
       const { error } = await supabase.auth.updateUser({ password: newPw });
       if (error) throw error;
-      Alert.alert('Success', 'Password updated successfully.');
+      Alert.alert(t('common.success'), t('ui.privacy.passwordUpdated'));
       setShowPwModal(false);
       setCurrentPw(''); setNewPw(''); setConfirmPw('');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to update password.');
+      Alert.alert(t('common.error'), err.message || t('ui.privacy.passwordUpdateFailed'));
     } finally {
       setPwLoading(false);
     }
@@ -59,30 +61,28 @@ const PrivacySecurityScreen = ({ navigation }: { navigation: any }) => {
 
   const handleDeleteAccount = () => {
     Alert.alert(
-      'Delete Account',
-      'This will permanently delete your account and all data. This action cannot be undone.',
+      t('ui.privacy.deleteAccount'),
+      t('ui.privacy.deleteAccountWarning'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('navigation.cancel'), style: 'cancel' },
         {
-          text: 'Delete Account', style: 'destructive',
+          text: t('ui.privacy.deleteAccount'), style: 'destructive',
           onPress: () => {
             Alert.alert(
-              'Are you sure?',
-              'Type "DELETE" to confirm.',
+              t('common.confirm'),
+              t('ui.privacy.typeDelete'),
               [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('navigation.cancel'), style: 'cancel' },
                 {
-                  text: 'Confirm',
+                  text: t('common.confirm'),
                   style: 'destructive',
                   onPress: async () => {
                     setDelLoading(true);
                     try {
-                      // Sign out — full account deletion would require a Supabase Edge Function
                       await signOut();
-                      navigation.getParent()?.navigate('Auth');
                     } catch (e) {
                       setDelLoading(false);
-                      Alert.alert('Error', 'Could not delete account. Please contact support.');
+                      Alert.alert(t('common.error'), t('ui.privacy.deleteFailed'));
                     }
                   },
                 },
@@ -94,63 +94,68 @@ const PrivacySecurityScreen = ({ navigation }: { navigation: any }) => {
     );
   };
 
-  interface Section { title: string; items: SectionItem[] }
-  const sections: Section[] = [
+  interface Section { id: string; items: SectionItem[] }
+  const sections: Section[] = useMemo(() => [
     {
-      title: 'SECURITY',
+      id: 'security',
       items: [
         {
           id: 'change_pw', icon: 'lock-closed', iconGradient: ['#8B5CF6', '#7C3AED'],
-          label: 'Change Password', sub: 'Update your password', type: 'nav',
+          label: t('ui.privacy.changePassword'), sub: t('ui.privacy.changePasswordDesc'), type: 'nav',
           onPress: () => setShowPwModal(true),
         },
         {
           id: '2fa', icon: 'shield-checkmark', iconGradient: ['#2563EB', '#3B82F6'],
-          label: 'Two-Factor Authentication', sub: 'Add extra security', type: 'toggle',
+          label: t('ui.privacy.twoFactor'), sub: t('ui.privacy.twoFactorDesc'), type: 'toggle',
           value: twoFa,
           onToggle: (v) => {
             setTwoFa(v);
-            if (v) Alert.alert('2FA', '2FA setup will be available soon.');
+            if (v) Alert.alert(t('ui.privacy.twoFactor'), t('ui.privacy.twoFactorSoon'));
           },
         },
         {
           id: 'sessions', icon: 'phone-portrait-outline', iconGradient: ['#0891B2', '#22D3EE'],
-          label: 'Active Sessions', sub: 'Manage logged-in devices', type: 'nav',
-          onPress: () => Alert.alert('Active Sessions', 'Session management coming soon.'),
+          label: t('ui.privacy.activeSessions'), sub: t('ui.privacy.activeSessionsDesc'), type: 'nav',
+          onPress: () => Alert.alert(t('ui.privacy.activeSessions'), t('ui.privacy.sessionsSoon')),
         },
       ],
     },
     {
-      title: 'PRIVACY',
+      id: 'privacy',
       items: [
         {
           id: 'data', icon: 'document-text-outline', iconGradient: ['#64748B', '#475569'],
-          label: 'Data & Privacy', sub: 'Download your data', type: 'nav',
-          onPress: () => Alert.alert('Data Export', 'Data export will be available soon. Contact support@sparkleuae.com to request your data.'),
+          label: t('ui.privacy.dataPrivacy'), sub: t('ui.privacy.downloadData'), type: 'nav',
+          onPress: () => Alert.alert(t('ui.privacy.downloadData'), t('ui.privacy.exportSoon')),
         },
         {
           id: 'delete', icon: 'trash', iconGradient: ['#EF4444', '#DC2626'],
-          label: 'Delete Account', sub: 'Permanently delete account', type: 'danger',
+          label: t('ui.privacy.deleteAccount'), sub: t('ui.privacy.deleteAccountDesc'), type: 'danger',
           onPress: handleDeleteAccount,
         },
       ],
     },
     {
-      title: 'LEGAL',
+      id: 'legal',
       items: [
         {
           id: 'privacy', icon: 'link-outline', iconGradient: ['#334155', '#475569'],
-          label: 'Privacy Policy', sub: '', type: 'nav',
+          label: t('ui.privacy.privacyPolicy'), sub: '', type: 'nav',
           onPress: () => Linking.openURL('https://sparkleuae.com/privacy'),
         },
         {
           id: 'terms', icon: 'link-outline', iconGradient: ['#334155', '#475569'],
-          label: 'Terms of Service', sub: '', type: 'nav',
+          label: t('ui.privacy.termsOfService'), sub: '', type: 'nav',
           onPress: () => Linking.openURL('https://sparkleuae.com/terms'),
         },
       ],
     },
-  ];
+  ], [t, twoFa]);
+
+  const pwFields = useMemo(() => [
+    { id: 'new', label: t('ui.privacy.newPassword'), val: newPw, set: setNewPw, placeholder: t('ui.privacy.passwordMin') },
+    { id: 'confirm', label: t('ui.privacy.confirmPassword'), val: confirmPw, set: setConfirmPw, placeholder: t('ui.privacy.repeatPassword') },
+  ], [t, newPw, confirmPw]);
 
   return (
     <View style={s.root}>
@@ -161,14 +166,14 @@ const PrivacySecurityScreen = ({ navigation }: { navigation: any }) => {
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.75}>
           <Ionicons name="chevron-back" size={22} color="#F1F5F9" />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Privacy & Security</Text>
+        <Text style={s.headerTitle}>{t('profile.privacy')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
       <ScrollView contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false}>
         {sections.map(section => (
-          <View key={section.title} style={s.group}>
-            <Text style={s.groupLabel}>{section.title}</Text>
+          <View key={section.id} style={s.group}>
+            <Text style={s.groupLabel}>{t(`ui.privacy.${section.id === 'privacy' ? 'privacySection' : section.id}`)}</Text>
             <View style={s.card}>
               {section.items.map((item, idx) => {
                 const isDanger = item.type === 'danger';
@@ -214,13 +219,10 @@ const PrivacySecurityScreen = ({ navigation }: { navigation: any }) => {
           <View style={s.overlay}>
             <View style={s.sheet}>
               <View style={s.sheetHandle} />
-              <Text style={s.sheetTitle}>Change Password</Text>
+              <Text style={s.sheetTitle}>{t('ui.privacy.changePassword')}</Text>
 
-              {[
-                { label: 'New Password', val: newPw, set: setNewPw, placeholder: 'At least 8 characters' },
-                { label: 'Confirm Password', val: confirmPw, set: setConfirmPw, placeholder: 'Repeat new password' },
-              ].map(f => (
-                <View key={f.label} style={s.fieldWrap}>
+              {pwFields.map(f => (
+                <View key={f.id} style={s.fieldWrap}>
                   <Text style={s.fieldLabel}>{f.label}</Text>
                   <TextInput
                     style={s.fieldInput}
@@ -235,11 +237,11 @@ const PrivacySecurityScreen = ({ navigation }: { navigation: any }) => {
 
               <View style={s.sheetActions}>
                 <TouchableOpacity style={s.sheetCancel} onPress={() => setShowPwModal(false)} activeOpacity={0.75}>
-                  <Text style={s.sheetCancelText}>Cancel</Text>
+                  <Text style={s.sheetCancelText}>{t('navigation.cancel')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={s.sheetSave} onPress={handleChangePassword} activeOpacity={0.85} disabled={pwLoading}>
                   <LinearGradient colors={['#7C3AED', '#8B5CF6']} style={s.sheetSaveInner}>
-                    {pwLoading ? <ActivityIndicator color="#fff" /> : <Text style={s.sheetSaveText}>Update</Text>}
+                    {pwLoading ? <ActivityIndicator color="#fff" /> : <Text style={s.sheetSaveText}>{t('ui.privacy.update')}</Text>}
                   </LinearGradient>
                 </TouchableOpacity>
               </View>

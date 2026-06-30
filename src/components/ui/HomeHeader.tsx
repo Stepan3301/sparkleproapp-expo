@@ -14,7 +14,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useSimpleTranslation } from '../../utils/i18n';
 
 // Luxury interior hero image (already preloaded at startup)
-const HERO_IMG = require('../../../assets/banner_full_apartment.jpg');
+const HERO_IMG = require('../../../assets/banner_full_apartment.webp');
 
 interface HomeHeaderProps {
   userStats: {
@@ -41,7 +41,7 @@ const HomeHeader: React.FC<HomeHeaderProps> = ({ userStats, onProfileClick }) =>
     profile?.full_name ||
     user?.user_metadata?.full_name ||
     user?.email?.split('@')[0] ||
-    'User';
+    t('ui.user', 'User');
 
   const getAvatarSrc = () => {
     if (profile?.avatar_url) return { uri: profile.avatar_url };
@@ -85,7 +85,7 @@ const HomeHeader: React.FC<HomeHeaderProps> = ({ userStats, onProfileClick }) =>
           </Text>
           <View style={styles.locationRow}>
             <Ionicons name="location" size={13} color="#00D4FF" />
-            <Text style={styles.locationText}>Dubai, UAE</Text>
+            <Text style={styles.locationText}>{t('home.location', 'Dubai, UAE')}</Text>
           </View>
         </View>
 
@@ -101,13 +101,13 @@ const HomeHeader: React.FC<HomeHeaderProps> = ({ userStats, onProfileClick }) =>
         <View style={styles.pill}>
           <Ionicons name="home-outline" size={14} color="#00D4FF" />
           <Text style={styles.pillText}>
-            {userStats.totalBookings} cleaning{userStats.totalBookings !== 1 ? 's' : ''}
+            {t('ui.home.cleaningsCount', '{{count}} cleaning', { count: userStats.totalBookings })}
           </Text>
         </View>
         <View style={styles.pill}>
           <Ionicons name="location-outline" size={14} color="#00FF88" />
           <Text style={styles.pillText}>
-            {userStats.totalAddresses} address{userStats.totalAddresses !== 1 ? 'es' : ''}
+            {t('ui.home.addressesCount', '{{count}} address', { count: userStats.totalAddresses })}
           </Text>
         </View>
       </View>

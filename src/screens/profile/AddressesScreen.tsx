@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { useSimpleTranslation } from '../../utils/i18n';
 
 interface Address {
   id: number;
@@ -32,9 +33,22 @@ const LABEL_ICONS: Record<string, string> = {
   Other: 'add-circle',
 };
 
+const LABEL_I18N: Record<string, string> = {
+  Home: 'ui.addresses.labels.home',
+  Work: 'ui.addresses.labels.work',
+  Parents: 'ui.addresses.labels.parents',
+  Other: 'ui.addresses.labels.other',
+};
+
 const AddressesScreen = ({ navigation }: { navigation: any }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { t } = useSimpleTranslation();
+
+  const translateLabel = (label: string) => {
+    const key = LABEL_I18N[label];
+    return key ? t(key, label) : label;
+  };
 
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -79,12 +93,12 @@ const AddressesScreen = ({ navigation }: { navigation: any }) => {
     setMenuAddr(null);
     const title = addr.building_name || addr.street || addr.label;
     Alert.alert(
-      'Delete Address',
-      `Delete "${title}"?`,
+      t('ui.addresses.deleteTitle'),
+      t('ui.addresses.deleteConfirm', `Delete "${title}"?`, { values: { title } }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('navigation.cancel'), style: 'cancel' },
         {
-          text: 'Delete', style: 'destructive',
+          text: t('navigation.delete'), style: 'destructive',
           onPress: async () => {
             await supabase.from('addresses').delete().eq('id', addr.id);
             fetchAddresses();
@@ -109,7 +123,7 @@ const AddressesScreen = ({ navigation }: { navigation: any }) => {
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.75}>
           <Ionicons name="chevron-back" size={22} color="#F1F5F9" />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>My Addresses</Text>
+        <Text style={s.headerTitle}>{t('addresses.title')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -125,7 +139,7 @@ const AddressesScreen = ({ navigation }: { navigation: any }) => {
         >
           <LinearGradient colors={['#0891B2', '#22D3EE']} style={s.addBtnInner}>
             <Ionicons name="add" size={20} color="#FFFFFF" />
-            <Text style={s.addBtnText}>Add New Address</Text>
+            <Text style={s.addBtnText}>{t('addresses.addNew')}</Text>
           </LinearGradient>
         </TouchableOpacity>
 
@@ -137,8 +151,8 @@ const AddressesScreen = ({ navigation }: { navigation: any }) => {
             <View style={s.emptyIconWrap}>
               <Ionicons name="location-outline" size={48} color="#334155" />
             </View>
-            <Text style={s.emptyText}>No addresses saved yet</Text>
-            <Text style={s.emptyHint}>Tap "Add New Address" to add one</Text>
+            <Text style={s.emptyText}>{t('ui.addresses.emptyTitle')}</Text>
+            <Text style={s.emptyHint}>{t('ui.addresses.emptyHint')}</Text>
           </View>
         ) : (
           addresses.map(addr => (
@@ -161,10 +175,10 @@ const AddressesScreen = ({ navigation }: { navigation: any }) => {
 
               <View style={s.cardMeta}>
                 <View style={s.cardTitleRow}>
-                  <Text style={s.cardTitle}>{addr.label || 'Home'}</Text>
+                  <Text style={s.cardTitle}>{translateLabel(addr.label || 'Home')}</Text>
                   {addr.is_default && (
                     <View style={s.defaultBadge}>
-                      <Text style={s.defaultBadgeText}>Default</Text>
+                      <Text style={s.defaultBadgeText}>{t('ui.default')}</Text>
                     </View>
                   )}
                 </View>
@@ -189,7 +203,7 @@ const AddressesScreen = ({ navigation }: { navigation: any }) => {
         <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setMenuAddr(null)}>
           <View style={s.menu}>
             <Text style={s.menuTitle} numberOfLines={1}>
-              {menuAddr?.label || menuAddr?.building_name || menuAddr?.street || 'Address'}
+              {translateLabel(menuAddr?.label || '') || menuAddr?.building_name || menuAddr?.street || t('auth.address')}
             </Text>
 
             {/* Edit */}
@@ -213,7 +227,7 @@ const AddressesScreen = ({ navigation }: { navigation: any }) => {
               }}
             >
               <Ionicons name="create-outline" size={18} color="#22D3EE" />
-              <Text style={[s.menuItemText, { color: '#22D3EE' }]}>Edit</Text>
+              <Text style={[s.menuItemText, { color: '#22D3EE' }]}>{t('navigation.edit')}</Text>
             </TouchableOpacity>
 
             {/* Set as Default (only shown when not already default) */}
@@ -225,7 +239,7 @@ const AddressesScreen = ({ navigation }: { navigation: any }) => {
                   onPress={() => menuAddr && handleSetDefault(menuAddr)}
                 >
                   <Ionicons name="star-outline" size={18} color="#94A3B8" />
-                  <Text style={[s.menuItemText, { color: '#94A3B8' }]}>Set as Default</Text>
+                  <Text style={[s.menuItemText, { color: '#94A3B8' }]}>{t('ui.addresses.setDefault')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -238,7 +252,7 @@ const AddressesScreen = ({ navigation }: { navigation: any }) => {
               onPress={() => menuAddr && handleDelete(menuAddr)}
             >
               <Ionicons name="trash-outline" size={18} color="#EF4444" />
-              <Text style={[s.menuItemText, { color: '#EF4444' }]}>Delete</Text>
+              <Text style={[s.menuItemText, { color: '#EF4444' }]}>{t('navigation.delete')}</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>

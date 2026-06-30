@@ -11,28 +11,28 @@ import { Asset } from 'expo-asset';
 // ─── All assets that should be warm in cache ─────────────────────────────────
 const ASSET_MODULES = [
   // Service category icons (booking screen step 1 — main grid)
-  require('../../assets/icon_regular_cleaning.png'),
-  require('../../assets/icon_deep_cleaning.png'),
-  require('../../assets/icon_complete_packages.png'),
-  require('../../assets/icon_window_cleaning.png'),
+  require('../../assets/icon_regular_cleaning.webp'),
+  require('../../assets/icon_deep_cleaning.webp'),
+  require('../../assets/icon_complete_packages.webp'),
+  require('../../assets/icon_window_cleaning.webp'),
 
   // Complete Packages — individual service icons (grid in step 1)
-  require('../../assets/icon_full_villa_deep_cleaning.png'),
-  require('../../assets/icon_full_apartment.png'),
-  require('../../assets/icon_villa_facade.png'),
-  require('../../assets/icon_move_in_out.png'),
-  require('../../assets/icon_post_construction_final.png'),
-  require('../../assets/icon_kitchen_cleaning.png'),
-  require('../../assets/icon_bathroom_deep_cleaning.png'),
+  require('../../assets/icon_full_villa_deep_cleaning.webp'),
+  require('../../assets/icon_full_apartment.webp'),
+  require('../../assets/icon_villa_facade.webp'),
+  require('../../assets/icon_move_in_out.webp'),
+  require('../../assets/icon_post_construction_final.webp'),
+  require('../../assets/icon_kitchen_cleaning.webp'),
+  require('../../assets/icon_bathroom_deep_cleaning.webp'),
 
   // Complete Packages — banner images (bottom sheet)
-  require('../../assets/banner_full_villa.jpg'),
-  require('../../assets/banner_full_apartment.jpg'),
-  require('../../assets/banner_villa_facade.jpg'),
-  require('../../assets/banner_move_in_out.jpg'),
-  require('../../assets/banner_post_construction.jpg'),
-  require('../../assets/banner_kitchen.jpg'),
-  require('../../assets/banner_bathroom.jpg'),
+  require('../../assets/banner_full_villa.webp'),
+  require('../../assets/banner_full_apartment.webp'),
+  require('../../assets/banner_villa_facade.webp'),
+  require('../../assets/banner_move_in_out.webp'),
+  require('../../assets/banner_post_construction.webp'),
+  require('../../assets/banner_kitchen.webp'),
+  require('../../assets/banner_bathroom.webp'),
 
   // Note: system UI icons now use @expo/vector-icons (Ionicons) — no PNG assets needed
 ];

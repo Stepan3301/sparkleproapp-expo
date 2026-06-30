@@ -2,48 +2,132 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   TextInput, RefreshControl, StatusBar, ActivityIndicator,
-  ScrollView, Alert, Modal, KeyboardAvoidingView, Platform,
+  Alert, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import CleanerAvatar from '../../components/admin/CleanerAvatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../navigation/types';
 import { supabase } from '../../lib/supabase';
+import { useSimpleTranslation } from '../../utils/i18n';
+import { generateCleanerLogin, generateCleanerPassword } from '../../utils/cleanerCredentials';
 
-type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+type TeamNav = NativeStackNavigationProp<RootStackParamList>;
 
-const FILTER_TABS = [
-  { key: 'all',       label: 'All'       },
-  { key: 'available', label: 'Available' },
-  { key: 'busy',      label: 'Busy'      },
-  { key: 'off',       label: 'Off Today' },
-];
+const FILTER_TAB_KEYS = ['all', 'available', 'busy', 'off'] as const;
 
 // ─── Add Member Modal ─────────────────────────────────────────────────────────
 
-const AddMemberModal = ({ visible, onClose, onAdded }: { visible: boolean; onClose: () => void; onAdded: () => void }) => {
-  const [name, setName]         = useState('');
-  const [phone, setPhone]       = useState('');
-  const [specialty, setSpec]    = useState('');
-  const [saving, setSaving]     = useState(false);
+const AddMemberModal = ({
+  visible, onClose, onAdded, t,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onAdded: () => void;
+  t: (key: string, fallback?: string, options?: { values?: Record<string, string | number> }) => string;
+}) => {
+  const [name, setName]               = useState('');
+  const [phone, setPhone]             = useState('');
+  const [specialty, setSpec]          = useState('');
+  const [login, setLogin]             = useState('');
+  const [loginEdited, setLoginEdited] = useState(false);
+  const [password, setPassword]       = useState('');
+  const [autoPassword, setAutoPassword] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving]           = useState(false);
+
+  const resetForm = () => {
+    setName('');
+    setPhone('');
+    setSpec('');
+    setLogin('');
+    setLoginEdited(false);
+    setPassword('');
+    setAutoPassword(true);
+    setShowPassword(false);
+  };
+
+  const refreshLogin = (fullName: string) => {
+    if (!fullName.trim()) return;
+    setLogin(generateCleanerLogin(fullName));
+  };
+
+  const refreshPassword = () => setPassword(generateCleanerPassword());
+
+  const copyPassword = async () => {
+    if (!password) return;
+    await Clipboard.setStringAsync(password);
+    Alert.alert(t('ui.admin.passwordCopied', 'Copied'), t('ui.admin.passwordCopiedHint', 'Password copied to clipboard'));
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    resetForm();
+    refreshPassword();
+  }, [visible]);
+
+  useEffect(() => {
+    if (!loginEdited && name.trim()) refreshLogin(name);
+  }, [name, loginEdited]);
+
+  useEffect(() => {
+    if (autoPassword) refreshPassword();
+  }, [autoPassword]);
 
   const handleSave = async () => {
-    if (!name.trim()) { Alert.alert('Error', 'Name is required'); return; }
-    setSaving(true);
-    const { error } = await supabase.from('cleaners').insert({
-      name: name.trim(),
-      phone: phone.trim() || null,
-      specialty: specialty.trim() || 'General Cleaning',
-      is_active: true,
-      rating: 4.8,
-      reviews_count: 0,
-    });
-    setSaving(false);
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      setName(''); setPhone(''); setSpec('');
-      onAdded();
-      onClose();
+    if (!name.trim()) {
+      Alert.alert(t('common.error', 'Error'), t('ui.admin.nameRequired', 'Name is required'));
+      return;
     }
+    if (!login.trim()) {
+      Alert.alert(t('common.error', 'Error'), t('ui.admin.loginRequired', 'Login is required'));
+      return;
+    }
+    const finalPassword = autoPassword ? password : password.trim();
+    if (!finalPassword || finalPassword.length < 6) {
+      Alert.alert(t('common.error', 'Error'), t('ui.admin.passwordMin', 'Password must be at least 6 characters'));
+      return;
+    }
+
+    setSaving(true);
+    let lastError: string | null = null;
+    let attemptLogin = login.trim().toLowerCase();
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data, error } = await supabase.rpc('create_cleaner_with_account', {
+        p_name: name.trim(),
+        p_phone: phone.trim() || null,
+        p_specialty: specialty.trim() || t('ui.admin.generalCleaning', 'General Cleaning'),
+        p_login: attemptLogin,
+        p_password: finalPassword,
+      });
+
+      if (!error && data) {
+        setSaving(false);
+        Alert.alert(
+          t('ui.admin.memberCreatedTitle', 'Team Member Created'),
+          t('ui.admin.memberCreatedBody', 'Give these credentials to the cleaner:\n\nLogin: {{login}}\nPassword: {{password}}', {
+            values: { login: data.login ?? attemptLogin, password: finalPassword },
+          }),
+          [{ text: t('common.ok', 'OK'), onPress: () => { resetForm(); onAdded(); onClose(); } }],
+        );
+        return;
+      }
+
+      lastError = error?.message ?? t('ui.admin.createFailed', 'Could not create team member');
+      if (lastError.toLowerCase().includes('login already taken')) {
+        attemptLogin = generateCleanerLogin(name.trim());
+        setLogin(attemptLogin);
+        continue;
+      }
+      break;
+    }
+
+    setSaving(false);
+    Alert.alert(t('common.error', 'Error'), lastError ?? t('ui.admin.createFailed', 'Could not create team member'));
   };
 
   return (
@@ -51,12 +135,13 @@ const AddMemberModal = ({ visible, onClose, onAdded }: { visible: boolean; onClo
       <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={s.modalSheet}>
           <View style={s.modalHandle} />
-          <Text style={s.modalTitle}>Add Team Member</Text>
+          <Text style={s.modalTitle}>{t('ui.admin.addTeamMember', 'Add Team Member')}</Text>
+          <Text style={s.modalSubtitle}>{t('ui.admin.addMemberSubtitle', 'Account login & password are generated automatically')}</Text>
 
           {[
-            { label: 'Full Name *', value: name, setter: setName, placeholder: 'e.g. Anna Petrova' },
-            { label: 'Phone',       value: phone, setter: setPhone, placeholder: '+971 50 000 0000' },
-            { label: 'Specialty',   value: specialty, setter: setSpec, placeholder: 'e.g. Deep Cleaning Specialist' },
+            { label: t('ui.admin.fullName', 'Full Name *'), value: name, setter: setName, placeholder: t('ui.admin.namePlaceholder', 'e.g. Anna Petrova') },
+            { label: t('ui.admin.phone', 'Phone'), value: phone, setter: setPhone, placeholder: '+971 50 000 0000' },
+            { label: t('ui.admin.specialty', 'Specialty'), value: specialty, setter: setSpec, placeholder: t('ui.admin.specialtyPlaceholder', 'e.g. Deep Cleaning Specialist') },
           ].map(({ label, value, setter, placeholder }) => (
             <View key={label} style={{ marginBottom: 14 }}>
               <Text style={s.inputLabel}>{label}</Text>
@@ -70,12 +155,65 @@ const AddMemberModal = ({ visible, onClose, onAdded }: { visible: boolean; onClo
             </View>
           ))}
 
+          <View style={{ marginBottom: 14 }}>
+            <Text style={s.inputLabel}>{t('ui.admin.cleanerLogin', 'Login')}</Text>
+            <View style={s.inlineRow}>
+              <TextInput
+                style={[s.input, { flex: 1 }]}
+                value={login}
+                onChangeText={(v) => { setLoginEdited(true); setLogin(v.toLowerCase().replace(/[^a-z0-9]/g, '')); }}
+                placeholder="st281"
+                placeholderTextColor="#5A6A7A"
+                autoCapitalize="none"
+              />
+              <TouchableOpacity style={s.iconBtn} onPress={() => { setLoginEdited(false); refreshLogin(name); }}>
+                <Ionicons name="refresh" size={18} color="#38BDF8" />
+              </TouchableOpacity>
+            </View>
+            <Text style={s.fieldHint}>{t('ui.admin.loginHint', 'First letter of name + first letter of surname + 3 digits')}</Text>
+          </View>
+
+          <View style={{ marginBottom: 14 }}>
+            <View style={s.inlineRow}>
+              <Text style={[s.inputLabel, { flex: 1, marginBottom: 0 }]}>{t('ui.admin.cleanerPassword', 'Password')}</Text>
+              <TouchableOpacity onPress={() => setAutoPassword(v => !v)}>
+                <Text style={s.toggleLink}>
+                  {autoPassword ? t('ui.admin.setManualPassword', 'Set manually') : t('ui.admin.autoGenerate', 'Auto-generate')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <View style={s.inlineRow}>
+              <TextInput
+                style={[s.input, { flex: 1 }]}
+                value={password}
+                onChangeText={setPassword}
+                editable={!autoPassword}
+                secureTextEntry={!showPassword}
+                placeholderTextColor="#5A6A7A"
+              />
+              <TouchableOpacity style={s.iconBtn} onPress={copyPassword}>
+                <Ionicons name="copy-outline" size={18} color="#38BDF8" />
+              </TouchableOpacity>
+              <TouchableOpacity style={s.iconBtn} onPress={() => setShowPassword(v => !v)}>
+                <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={18} color="#7A8A9A" />
+              </TouchableOpacity>
+              <TouchableOpacity style={s.iconBtn} onPress={refreshPassword}>
+                <Ionicons name="refresh" size={18} color="#38BDF8" />
+              </TouchableOpacity>
+            </View>
+            <Text style={s.fieldHint}>
+              {autoPassword
+                ? t('ui.admin.passwordAutoHint', '8 random characters — tap refresh to regenerate')
+                : t('ui.admin.passwordManualHint', 'Minimum 6 characters')}
+            </Text>
+          </View>
+
           <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
             <TouchableOpacity style={s.cancelBtn} onPress={onClose}>
-              <Text style={s.cancelBtnText}>Cancel</Text>
+              <Text style={s.cancelBtnText}>{t('common.cancel', 'Cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.saveBtn} onPress={handleSave} disabled={saving}>
-              {saving ? <ActivityIndicator size={16} color="#000" /> : <Text style={s.saveBtnText}>Add Member</Text>}
+              {saving ? <ActivityIndicator size={16} color="#000" /> : <Text style={s.saveBtnText}>{t('ui.admin.addMember', 'Add Member')}</Text>}
             </TouchableOpacity>
           </View>
         </View>
@@ -86,25 +224,28 @@ const AddMemberModal = ({ visible, onClose, onAdded }: { visible: boolean; onClo
 
 // ─── Cleaner Card ─────────────────────────────────────────────────────────────
 
-const CleanerCard = ({ item }: { item: any }) => {
+const CleanerCard = ({
+  item, t, onPress,
+}: {
+  item: any;
+  t: (key: string, fallback?: string) => string;
+  onPress: () => void;
+}) => {
   const isAvail = item.is_active;
   const stars   = Math.round(Number(item.rating ?? 4.8));
   const ringColor = isAvail ? '#10B981' : '#F59E0B';
 
   return (
-    <View style={s.cleanerCard}>
-      {/* Avatar with ring */}
+    <TouchableOpacity style={s.cleanerCard} onPress={onPress} activeOpacity={0.78}>
       <View style={[s.avatarRing, { borderColor: ringColor }]}>
-        <View style={s.avatar}>
-          <Text style={s.avatarText}>{item.name?.[0]?.toUpperCase() ?? '?'}</Text>
-        </View>
+        <CleanerAvatar name={item.name} avatarUrl={item.avatar_url} size={48} />
         <View style={[s.statusDot, { backgroundColor: ringColor }]} />
       </View>
 
       {/* Info */}
       <View style={s.cleanerInfo}>
         <Text style={s.cleanerName}>{item.name}</Text>
-        <Text style={s.cleanerSpec}>{item.specialty ?? 'General Cleaning'}</Text>
+        <Text style={s.cleanerSpec}>{item.specialty ?? t('ui.admin.generalCleaning', 'General Cleaning')}</Text>
         <View style={s.starsRow}>
           {Array.from({ length: 5 }).map((_, i) => (
             <Ionicons
@@ -125,12 +266,12 @@ const CleanerCard = ({ item }: { item: any }) => {
       <View style={s.cleanerRight}>
         <View style={[s.availBadge, { backgroundColor: isAvail ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)' }]}>
           <Text style={[s.availText, { color: isAvail ? '#10B981' : '#F59E0B' }]}>
-            {isAvail ? 'Available' : 'Busy'}
+            {isAvail ? t('ui.admin.filters.available', 'Available') : t('ui.admin.filters.busy', 'Busy')}
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color="#3A4A5A" style={{ marginTop: 8 }} />
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -138,6 +279,22 @@ const CleanerCard = ({ item }: { item: any }) => {
 
 const AdminTeamScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<TeamNav>();
+  const { t } = useSimpleTranslation();
+
+  const FILTER_TABS = useMemo(
+    () =>
+      FILTER_TAB_KEYS.map((key) => ({
+        key,
+        label:
+          key === 'all'
+            ? t('ui.all', 'All')
+            : key === 'off'
+              ? t('ui.admin.filters.offToday', 'Off Today')
+              : t(`ui.admin.filters.${key}`, key === 'available' ? 'Available' : 'Busy'),
+      })),
+    [t],
+  );
 
   const [cleaners, setCleaners]     = useState<any[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -189,10 +346,10 @@ const AdminTeamScreen: React.FC = () => {
 
       {/* ── Header ── */}
       <View style={s.header}>
-        <Text style={s.title}>Team</Text>
+        <Text style={s.title}>{t('ui.admin.tabs.team', 'Team')}</Text>
         <TouchableOpacity style={s.addBtn} onPress={() => setShowAdd(true)}>
           <Ionicons name="add" size={16} color="#000" />
-          <Text style={s.addBtnText}>Add Member</Text>
+          <Text style={s.addBtnText}>{t('ui.admin.addMember', 'Add Member')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -201,7 +358,7 @@ const AdminTeamScreen: React.FC = () => {
         <Ionicons name="search-outline" size={16} color="#5A6A7A" style={{ marginRight: 8 }} />
         <TextInput
           style={s.searchInput}
-          placeholder="Search team members..."
+          placeholder={t('ui.admin.searchTeam', 'Search team members...')}
           placeholderTextColor="#5A6A7A"
           value={search}
           onChangeText={setSearch}
@@ -218,27 +375,22 @@ const AdminTeamScreen: React.FC = () => {
         <View style={[s.statCard, { borderColor: 'rgba(56,189,248,0.25)' }]}>
           <Ionicons name="people-outline" size={18} color="#38BDF8" />
           <Text style={[s.statNum, { color: '#E8EDF5' }]}>{totalCount}</Text>
-          <Text style={s.statLabel}>Total</Text>
+          <Text style={s.statLabel}>{t('ui.admin.stats.total', 'Total')}</Text>
         </View>
         <View style={[s.statCard, { borderColor: 'rgba(16,185,129,0.25)' }]}>
           <Ionicons name="checkmark-circle-outline" size={18} color="#10B981" />
           <Text style={[s.statNum, { color: '#10B981' }]}>{availableCount}</Text>
-          <Text style={s.statLabel}>Available</Text>
+          <Text style={s.statLabel}>{t('ui.admin.stats.available', 'Available')}</Text>
         </View>
         <View style={[s.statCard, { borderColor: 'rgba(245,158,11,0.25)' }]}>
           <Ionicons name="time-outline" size={18} color="#F59E0B" />
           <Text style={[s.statNum, { color: '#F59E0B' }]}>{busyCount}</Text>
-          <Text style={s.statLabel}>Busy</Text>
+          <Text style={s.statLabel}>{t('ui.admin.stats.busy', 'Busy')}</Text>
         </View>
       </View>
 
       {/* ── Filter Tabs ── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 18, gap: 8, paddingBottom: 8 }}
-        style={{ marginBottom: 8 }}
-      >
+      <View style={s.filterRow}>
         {FILTER_TABS.map(tab => {
           const isActive = filter === tab.key;
           return (
@@ -246,12 +398,15 @@ const AdminTeamScreen: React.FC = () => {
               key={tab.key}
               style={[s.filterTab, isActive && s.filterTabActive]}
               onPress={() => setFilter(tab.key)}
+              activeOpacity={0.75}
             >
-              <Text style={[s.filterTabText, isActive && s.filterTabTextActive]}>{tab.label}</Text>
+              <Text style={[s.filterTabText, isActive && s.filterTabTextActive]} numberOfLines={1}>
+                {tab.label}
+              </Text>
             </TouchableOpacity>
           );
         })}
-      </ScrollView>
+      </View>
 
       {/* ── List ── */}
       {loading ? (
@@ -260,20 +415,26 @@ const AdminTeamScreen: React.FC = () => {
         <FlatList
           data={displayed}
           keyExtractor={item => item.id}
-          renderItem={({ item }) => <CleanerCard item={item} />}
+          renderItem={({ item }) => (
+            <CleanerCard
+              item={item}
+              t={t}
+              onPress={() => navigation.navigate('AdminTeamMember', { cleanerId: item.id })}
+            />
+          )}
           contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: insets.bottom + 100 }}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38BDF8" />}
           ListEmptyComponent={
             <View style={s.empty}>
               <Ionicons name="people-outline" size={40} color="#38BDF8" />
-              <Text style={s.emptyText}>No team members found</Text>
+              <Text style={s.emptyText}>{t('ui.admin.noTeam', 'No team members found')}</Text>
             </View>
           }
         />
       )}
 
-      <AddMemberModal visible={showAdd} onClose={() => setShowAdd(false)} onAdded={fetchCleaners} />
+      <AddMemberModal visible={showAdd} onClose={() => setShowAdd(false)} onAdded={fetchCleaners} t={t} />
     </View>
   );
 };
@@ -296,15 +457,14 @@ const s = StyleSheet.create({
   statNum:   { fontSize: 22, fontWeight: '800', marginTop: 6, marginBottom: 2 },
   statLabel: { color: '#7A8A9A', fontSize: 11, fontWeight: '500' },
 
-  filterTab:         { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  filterRow:         { flexDirection: 'row', paddingHorizontal: 18, gap: 6, marginBottom: 12 },
+  filterTab:         { flex: 1, paddingHorizontal: 6, paddingVertical: 9, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center', minHeight: 38 },
   filterTabActive:   { backgroundColor: '#38BDF8', borderColor: '#38BDF8' },
-  filterTabText:     { color: '#A0B0C0', fontSize: 13, fontWeight: '600' },
+  filterTabText:     { color: '#A0B0C0', fontSize: 11, fontWeight: '600', textAlign: 'center' },
   filterTabTextActive:{ color: '#000', fontWeight: '700' },
 
   cleanerCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0F1629', borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   avatarRing:  { width: 56, height: 56, borderRadius: 28, borderWidth: 2.5, alignItems: 'center', justifyContent: 'center', position: 'relative', marginRight: 12 },
-  avatar:      { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(56,189,248,0.15)', alignItems: 'center', justifyContent: 'center' },
-  avatarText:  { color: '#38BDF8', fontSize: 20, fontWeight: '800' },
   statusDot:   { position: 'absolute', bottom: 1, right: 1, width: 13, height: 13, borderRadius: 7, borderWidth: 2, borderColor: '#0F1629' },
   cleanerInfo: { flex: 1 },
   cleanerName: { color: '#E8EDF5', fontSize: 15, fontWeight: '700' },
@@ -323,8 +483,13 @@ const s = StyleSheet.create({
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
   modalSheet:   { backgroundColor: '#0D1526', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   modalHandle:  { width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)', alignSelf: 'center', marginBottom: 20 },
-  modalTitle:   { color: '#E8EDF5', fontSize: 20, fontWeight: '800', marginBottom: 20 },
+  modalTitle:   { color: '#E8EDF5', fontSize: 20, fontWeight: '800', marginBottom: 6 },
+  modalSubtitle:{ color: '#7A8A9A', fontSize: 12, marginBottom: 16, lineHeight: 18 },
   inputLabel:   { color: '#7A8A9A', fontSize: 12, marginBottom: 6, fontWeight: '600' },
+  fieldHint:    { color: '#5A6A7A', fontSize: 11, marginTop: 6, lineHeight: 16 },
+  inlineRow:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconBtn:      { width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  toggleLink:   { color: '#38BDF8', fontSize: 12, fontWeight: '700' },
   input:        { backgroundColor: '#161F35', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: '#E8EDF5', fontSize: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   cancelBtn:    { flex: 1, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 12, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   cancelBtnText:{ color: '#A0B0C0', fontWeight: '700' },

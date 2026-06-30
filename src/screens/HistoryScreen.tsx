@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,32 +21,35 @@ import { Ionicons } from '@expo/vector-icons';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 import { useAuth } from '../contexts/AuthContext';
+import { useGoToAuth } from '../hooks/useGoToAuth';
 import { supabase } from '../lib/supabase';
 import {
   Booking,
   BookingStatus,
-  getBookingStatusLabel,
   SIZE_OPTIONS,
 } from '../types/booking';
 import { canCancelBooking, getCancellationBlockedReason } from '../utils/bookingUtils';
+import { useSimpleTranslation } from '../utils/i18n';
+import { translateBookingStatus, translatePropertySize, formatLocalizedDate, formatLocalizedTime } from '../utils/translateStatus';
+import BookingPhotosGallery from '../components/booking/BookingPhotosGallery';
 
 const { width, height } = Dimensions.get('window');
 
 // ─── Service Icon Asset Map ────────────────────────────────────────────────────
 
 const SERVICE_ICONS: Record<string, ImageSourcePropType> = {
-  regular:      require('../../assets/icon_regular_cleaning.png'),
-  deep:         require('../../assets/icon_deep_cleaning.png'),
-  villa_deep:   require('../../assets/icon_full_villa_deep_cleaning.png'),
-  bathroom:     require('../../assets/icon_bathroom_deep_cleaning.png'),
-  kitchen:      require('../../assets/icon_kitchen_cleaning.png'),
-  move:         require('../../assets/icon_move_in_out.png'),
-  construction: require('../../assets/icon_post_construction_final.png'),
-  window:       require('../../assets/icon_window_cleaning.png'),
-  packages:     require('../../assets/icon_complete_packages.png'),
-  facade:       require('../../assets/icon_villa_facade.png'),
-  apartment:    require('../../assets/icon_full_apartment.png'),
-  default:      require('../../assets/icon_regular_cleaning.png'),
+  regular:      require('../../assets/icon_regular_cleaning.webp'),
+  deep:         require('../../assets/icon_deep_cleaning.webp'),
+  villa_deep:   require('../../assets/icon_full_villa_deep_cleaning.webp'),
+  bathroom:     require('../../assets/icon_bathroom_deep_cleaning.webp'),
+  kitchen:      require('../../assets/icon_kitchen_cleaning.webp'),
+  move:         require('../../assets/icon_move_in_out.webp'),
+  construction: require('../../assets/icon_post_construction_final.webp'),
+  window:       require('../../assets/icon_window_cleaning.webp'),
+  packages:     require('../../assets/icon_complete_packages.webp'),
+  facade:       require('../../assets/icon_villa_facade.webp'),
+  apartment:    require('../../assets/icon_full_apartment.webp'),
+  default:      require('../../assets/icon_regular_cleaning.webp'),
 };
 
 const getServiceIconKey = (name: string): keyof typeof SERVICE_ICONS => {
@@ -74,7 +77,6 @@ const STATUS_CONFIG: Record<BookingStatus, {
   badgeBg: string;
   badgeText: string;
   badgeBorder: string;
-  label: string;
 }> = {
   pending: {
     bar: '#F59E0B',
@@ -82,7 +84,6 @@ const STATUS_CONFIG: Record<BookingStatus, {
     badgeBg: 'rgba(245,158,11,0.15)',
     badgeText: '#FBBF24',
     badgeBorder: 'rgba(245,158,11,0.45)',
-    label: 'Pending',
   },
   confirmed: {
     bar: '#22D3EE',
@@ -90,7 +91,6 @@ const STATUS_CONFIG: Record<BookingStatus, {
     badgeBg: 'rgba(34,211,238,0.15)',
     badgeText: '#22D3EE',
     badgeBorder: 'rgba(34,211,238,0.45)',
-    label: 'Confirmed',
   },
   in_progress: {
     bar: '#8B5CF6',
@@ -98,7 +98,6 @@ const STATUS_CONFIG: Record<BookingStatus, {
     badgeBg: 'rgba(139,92,246,0.15)',
     badgeText: '#C4B5FD',
     badgeBorder: 'rgba(139,92,246,0.45)',
-    label: 'In Progress',
   },
   completed: {
     bar: '#10B981',
@@ -106,7 +105,6 @@ const STATUS_CONFIG: Record<BookingStatus, {
     badgeBg: 'rgba(16,185,129,0.15)',
     badgeText: '#34D399',
     badgeBorder: 'rgba(16,185,129,0.45)',
-    label: 'Completed',
   },
   cancelled: {
     bar: '#F87171',
@@ -114,43 +112,28 @@ const STATUS_CONFIG: Record<BookingStatus, {
     badgeBg: 'rgba(248,113,113,0.15)',
     badgeText: '#F87171',
     badgeBorder: 'rgba(248,113,113,0.45)',
-    label: 'Cancelled',
   },
 };
 
 // ─── Filter Tabs ───────────────────────────────────────────────────────────────
 
 type FilterTab = 'all' | BookingStatus;
-const FILTER_TABS: { key: FilterTab; label: string }[] = [
-  { key: 'all',         label: 'All' },
-  { key: 'pending',     label: 'Pending' },
-  { key: 'confirmed',   label: 'Confirmed' },
-  { key: 'completed',   label: 'Completed' },
-  { key: 'cancelled',   label: 'Cancelled' },
-];
 
 // ─── Small helpers ─────────────────────────────────────────────────────────────
 
-const cleanServiceName = (name?: string) =>
+const cleanServiceName = (name?: string, fallback = 'Cleaning Service') =>
   name
     ? name.replace(/\s*\(with materials\)/gi, '').replace(/\s*\(without materials\)/gi, '').trim()
-    : 'Cleaning Service';
+    : fallback;
 
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString('en-AE', { weekday: 'short', month: 'short', day: 'numeric' });
+const formatDate = (d: string, lang: string) => formatLocalizedDate(d, lang);
 
-const formatTime = (t: string) => {
-  try {
-    return new Date(`2000-01-01T${t}`).toLocaleTimeString('en-AE', {
-      hour: '2-digit', minute: '2-digit', hour12: true,
-    });
-  } catch { return t; }
-};
+const formatTime = (time: string, lang: string) => formatLocalizedTime(time, lang);
 
-const getSizeLabel = (size: string | null | undefined): string => {
-  if (!size) return 'N/A';
+const getSizeLabel = (size: string | null | undefined, t: (key: string, fallback?: string) => string): string => {
+  if (!size) return t('ui.na', 'N/A');
   const opt = SIZE_OPTIONS.find(o => o.size === size);
-  return opt ? opt.label : (size.charAt(0).toUpperCase() + size.slice(1));
+  return opt ? translatePropertySize(t, opt.size) : translatePropertySize(t, size);
 };
 
 const getServiceMainCategory = (id?: number | null): string | null => {
@@ -237,11 +220,11 @@ const det = StyleSheet.create({
 });
 
 const PriceRow = ({
-  label, value, bold, last,
-}: { label: string; value: string | number; bold?: boolean; last?: boolean }) => (
+  label, value, bold, last, currencyLabel = 'AED',
+}: { label: string; value: string | number; bold?: boolean; last?: boolean; currencyLabel?: string }) => (
   <View style={[pr.row, last && { borderBottomWidth: 0 }]}>
     <Text style={[pr.label, bold && pr.boldLabel]}>{label}</Text>
-    <Text style={[pr.value, bold && pr.boldValue]}>{value} AED</Text>
+    <Text style={[pr.value, bold && pr.boldValue]}>{value} {currencyLabel}</Text>
   </View>
 );
 
@@ -266,6 +249,21 @@ interface HistoryScreenProps { navigation: any; }
 const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const goToAuth = useGoToAuth();
+  const { t, tPlural, i18n } = useSimpleTranslation();
+
+  const FILTER_TABS = useMemo(
+    (): { key: FilterTab; label: string }[] => [
+      { key: 'all', label: t('ui.all', 'All') },
+      { key: 'pending', label: translateBookingStatus(t, 'pending') },
+      { key: 'confirmed', label: translateBookingStatus(t, 'confirmed') },
+      { key: 'completed', label: translateBookingStatus(t, 'completed') },
+      { key: 'cancelled', label: translateBookingStatus(t, 'cancelled') },
+    ],
+    [t],
+  );
+
+  const cleaningServiceLabel = t('ui.cleaningService', 'Cleaning Service');
 
   const [bookings, setBookings]     = useState<Booking[]>([]);
   const [services, setServices]     = useState<{ id: number; name: string }[]>([]);
@@ -355,16 +353,16 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
 
   const getServiceName = (id?: number | null, booking?: Booking): string => {
     const anyB = booking as any;
-    if (anyB?.service_name) return cleanServiceName(anyB.service_name);
-    if (!id) return 'Cleaning Service';
+    if (anyB?.service_name) return cleanServiceName(anyB.service_name, cleaningServiceLabel);
+    if (!id) return cleaningServiceLabel;
     const s = services.find(svc => svc.id === id);
-    return cleanServiceName(s?.name);
+    return cleanServiceName(s?.name, cleaningServiceLabel);
   };
 
   const getAddressText = (addrId?: number | null, custom?: string | null) => {
     if (custom) return custom;
-    if (!addrId) return 'Saved address';
-    return addresses.find(a => a.id === addrId)?.street ?? 'Saved address';
+    if (!addrId) return t('ui.history.savedAddress', 'Saved address');
+    return addresses.find(a => a.id === addrId)?.street ?? t('ui.history.savedAddress', 'Saved address');
   };
 
   // ── Filter ──────────────────────────────────────────────────────────────────
@@ -399,16 +397,22 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
 
   const handleCancel = (booking: Booking) => {
     if (!canCancelBooking(booking)) {
-      Alert.alert('Cannot Cancel', getCancellationBlockedReason(booking));
+      Alert.alert(
+        t('ui.history.cannotCancel', 'Cannot Cancel'),
+        getCancellationBlockedReason(booking, t),
+      );
       return;
     }
     Alert.alert(
-      'Cancel Booking',
-      `Are you sure you want to cancel booking #${booking.id}? This action cannot be undone.`,
+      t('history.cancelTitle', 'Cancel Booking'),
+      t('ui.history.cancelConfirm', 'Are you sure you want to cancel booking #{{id}}? This action cannot be undone.', {
+        values: { id: booking.id },
+      }),
       [
-        { text: 'Keep Booking', style: 'cancel' },
+        { text: t('ui.keepBooking', 'Keep Booking'), style: 'cancel' },
         {
-          text: 'Cancel Booking', style: 'destructive',
+          text: t('ui.history.cancelBooking', 'Cancel Booking'),
+          style: 'destructive',
           onPress: async () => {
             setCancelling(true);
             closeModal();
@@ -417,13 +421,16 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
               if (error) throw error;
               setBookings(prev => prev.filter(b => b.id !== booking.id));
             } catch (err: any) {
-              Alert.alert('Error', err?.message ?? 'Failed to cancel booking. Please try again.');
+              Alert.alert(
+                t('common.error', 'Error'),
+                err?.message ?? t('ui.history.cancelFailed', 'Failed to cancel booking. Please try again.'),
+              );
             } finally {
               setCancelling(false);
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -451,21 +458,21 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
     return (
       <View style={[s.root, { paddingTop: insets.top }]}>
         <View style={s.header}>
-          <Text style={s.headerTitle}>Booking History</Text>
+          <Text style={s.headerTitle}>{t('history.title', 'Booking History')}</Text>
         </View>
         <View style={s.guestWall}>
           <Text style={s.guestIcon}>📋</Text>
-          <Text style={s.guestTitle}>Sign In to View History</Text>
+          <Text style={s.guestTitle}>{t('ui.history.signInTitle', 'Sign In to View History')}</Text>
           <Text style={s.guestSubtitle}>
-            Create an account to track your bookings and manage your orders.
+            {t('ui.history.signInDesc', 'Create an account to track your bookings and manage your orders.')}
           </Text>
           <TouchableOpacity
             style={s.guestBtn}
-            onPress={() => navigation.getParent()?.navigate('Auth')}
+          onPress={goToAuth}
             activeOpacity={0.85}
           >
             <LinearGradient colors={['#2563EB', '#3B82F6']} style={s.guestBtnGrad}>
-              <Text style={s.guestBtnText}>Sign In / Sign Up</Text>
+              <Text style={s.guestBtnText}>{t('ui.history.signInCta', 'Sign In / Sign Up')}</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -477,7 +484,7 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
     return (
       <View style={[s.root, s.centered, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color="#22D3EE" />
-        <Text style={s.loadingText}>Loading your bookings…</Text>
+        <Text style={s.loadingText}>{t('ui.history.loadingBookings', 'Loading your bookings…')}</Text>
       </View>
     );
   }
@@ -514,7 +521,7 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
             <View style={s.cardInfo}>
               <Text style={s.cardName} numberOfLines={1}>{name}</Text>
               <Text style={s.cardMeta}>
-                #{booking.id} · {formatDate(booking.service_date)} · {formatTime(booking.service_time)}
+                #{booking.id} · {formatDate(booking.service_date, i18n.language)} · {formatTime(booking.service_time, i18n.language)}
               </Text>
             </View>
 
@@ -523,7 +530,9 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
               s.statusBadge,
               { backgroundColor: cfg.badgeBg, borderColor: cfg.badgeBorder },
             ]}>
-              <Text style={[s.statusText, { color: cfg.badgeText }]}>{cfg.label}</Text>
+              <Text style={[s.statusText, { color: cfg.badgeText }]}>
+                {translateBookingStatus(t, booking.status)}
+              </Text>
             </View>
           </View>
 
@@ -531,17 +540,19 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
           <View style={s.cardBottom}>
             <View style={s.chip}>
               <Text style={s.chipText}>
-                {booking.cleaners_count} cleaner{booking.cleaners_count !== 1 ? 's' : ''}
+                {tPlural('ui.history.cleanersCount', booking.cleaners_count, `${booking.cleaners_count} cleaner`)}
               </Text>
             </View>
             {booking.duration_hours > 0 && (
               <View style={s.chip}>
-                <Text style={s.chipText}>{booking.duration_hours}h</Text>
+                <Text style={s.chipText}>
+                  {tPlural('ui.bookingFlow.hoursCount', booking.duration_hours, `${booking.duration_hours}h`)}
+                </Text>
               </View>
             )}
             <View style={s.cardPricePill}>
               <Text style={[s.cardPriceText, { color: cfg.bar }]}>
-                {booking.total_cost ?? booking.total_price} AED
+                {booking.total_cost ?? booking.total_price} {t('ui.aed', 'AED')}
               </Text>
             </View>
           </View>
@@ -586,13 +597,15 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
               { backgroundColor: cfg.badgeBg, borderColor: cfg.badgeBorder },
             ]}>
               <Text style={[s.modalBadgeText, { color: cfg.badgeText }]}>
-                {getBookingStatusLabel(b.status)}
+                {translateBookingStatus(t, b.status)}
               </Text>
             </View>
 
             {/* Service title */}
             <Text style={s.modalTitle}>{name}</Text>
-            <Text style={s.modalSubtitle}>Booking #{b.id}</Text>
+            <Text style={s.modalSubtitle}>
+              {t('ui.history.bookingNumber', 'Booking #{{id}}', { values: { id: b.id } })}
+            </Text>
 
             {/* Action buttons */}
             <View style={s.modalActions}>
@@ -608,7 +621,7 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
                   end={{ x: 1, y: 0 }}
                   style={s.actionBtnGrad}
                 >
-                  <Text style={s.actionBtnPrimaryText}>↺  Order Again</Text>
+                  <Text style={s.actionBtnPrimaryText}>{t('ui.history.orderAgain', '↺  Order Again')}</Text>
                 </LinearGradient>
               </TouchableOpacity>
 
@@ -622,7 +635,7 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
                 {cancelling
                   ? <ActivityIndicator size="small" color="#F87171" />
                   : <Text style={[s.actionBtnDangerText, !canCancel && { opacity: 0.4 }]}>
-                      ✕  Cancel Booking
+                      {t('ui.history.cancelBooking', '✕  Cancel Booking')}
                     </Text>
                 }
               </TouchableOpacity>
@@ -637,18 +650,18 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
           >
             {/* Info grid 2×2 */}
             <View style={s.infoGrid}>
-              <InfoTile icon="calendar-outline"  label="Date" value={formatDate(b.service_date)} />
-              <InfoTile icon="time-outline"      label="Time" value={formatTime(b.service_time)} />
+              <InfoTile icon="calendar-outline" label={t('history.details.date', 'Date')} value={formatDate(b.service_date, i18n.language)} />
+              <InfoTile icon="time-outline" label={t('history.details.time', 'Time')} value={formatTime(b.service_time, i18n.language)} />
             </View>
             <View style={[s.infoGrid, { marginTop: 10 }]}>
               <InfoTile
                 icon="people-outline"
-                label="Cleaners"
-                value={`${b.cleaners_count} Cleaner${b.cleaners_count !== 1 ? 's' : ''}`}
+                label={t('history.details.cleaners', 'Cleaners')}
+                value={tPlural('ui.history.cleanersCount', b.cleaners_count, `${b.cleaners_count} Cleaner`)}
               />
               <InfoTile
                 icon="location-outline"
-                label="Address"
+                label={t('admin.address', 'Address')}
                 value={getAddressText(b.address_id, b.custom_address)}
               />
             </View>
@@ -657,15 +670,23 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
             <View style={s.section}>
               <View style={s.sectionHeader}>
                 <View style={[s.sectionBar, { backgroundColor: '#22D3EE' }]} />
-                <Text style={s.sectionTitle}>Order Details</Text>
+                <Text style={s.sectionTitle}>{t('ui.history.orderDetails', 'Order Details')}</Text>
               </View>
-              <DetailRow label="Materials"     value={b.own_materials ? 'Customer provided' : 'Cleaner provided'} />
-              <DetailRow label="Property Size" value={getSizeLabel(b.property_size)} />
+              <DetailRow
+                label={t('history.details.materials', 'Materials')}
+                value={b.own_materials
+                  ? t('history.details.customerProvided', 'Customer provided')
+                  : t('history.details.cleanerProvided', 'Cleaner provided')}
+              />
+              <DetailRow label={t('history.details.propertySize', 'Property Size')} value={getSizeLabel(b.property_size, t)} />
               {Number(b.duration_hours) > 0 && (
-                <DetailRow label="Duration" value={`${b.duration_hours} hour${b.duration_hours !== 1 ? 's' : ''}`} />
+                <DetailRow
+                  label={t('ui.bookingFlow.duration', 'Duration')}
+                  value={tPlural('ui.bookingFlow.hoursCount', b.duration_hours, `${b.duration_hours} hour`)}
+                />
               )}
-              <DetailRow label="Customer"      value={b.customer_name} />
-              <DetailRow label="Phone"         value={b.customer_phone} />
+              <DetailRow label={t('ui.customer', 'Customer')} value={b.customer_name} />
+              <DetailRow label={t('admin.phone', 'Phone')} value={b.customer_phone} />
             </View>
 
             {/* Extra Services */}
@@ -673,7 +694,9 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
               <View style={s.section}>
                 <View style={s.sectionHeader}>
                   <View style={[s.sectionBar, { backgroundColor: '#10B981' }]} />
-                  <Text style={[s.sectionTitle, { color: '#34D399' }]}>Extra Services</Text>
+                  <Text style={[s.sectionTitle, { color: '#34D399' }]}>
+                    {t('ui.history.extraServices', 'Extra Services')}
+                  </Text>
                 </View>
                 {addons.length > 0 ? addons.map((addon: any, i: number) => (
                   <View key={i} style={s.addonRow}>
@@ -681,13 +704,13 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
                       <Text style={s.addonIconText}>+</Text>
                     </View>
                     <Text style={s.addonName} numberOfLines={1}>{addon.name}</Text>
-                    <Text style={s.addonPrice}>{addon.price ?? '—'} AED</Text>
+                    <Text style={s.addonPrice}>{addon.price ?? '—'} {t('ui.aed', 'AED')}</Text>
                   </View>
                 )) : (
                   <View style={s.addonRow}>
                     <View style={s.addonIconWrap}><Text style={s.addonIconText}>+</Text></View>
-                    <Text style={s.addonName}>Extra Services Added</Text>
-                    <Text style={s.addonPrice}>{b.addons_total} AED</Text>
+                    <Text style={s.addonName}>{t('ui.history.extraServicesAdded', 'Extra Services Added')}</Text>
+                    <Text style={s.addonPrice}>{b.addons_total} {t('ui.aed', 'AED')}</Text>
                   </View>
                 )}
               </View>
@@ -698,10 +721,12 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
               <View style={[s.section, { borderColor: 'rgba(56,189,248,0.25)' }]}>
                 <View style={s.sectionHeader}>
                   <View style={[s.sectionBar, { backgroundColor: '#38BDF8' }]} />
-                  <Text style={[s.sectionTitle, { color: '#7DD3FC' }]}>Window Cleaning</Text>
+                  <Text style={[s.sectionTitle, { color: '#7DD3FC' }]}>
+                    {t('ui.history.windowCleaning', 'Window Cleaning')}
+                  </Text>
                 </View>
                 <Text style={{ color: '#60A5FA', fontWeight: '700', fontSize: 14, marginTop: 4 }}>
-                  🪟  {b.window_panels_count} window panel{b.window_panels_count !== 1 ? 's' : ''}
+                  🪟  {tPlural('ui.history.windowPanels', b.window_panels_count, `${b.window_panels_count} window panel`)}
                 </Text>
               </View>
             )}
@@ -711,9 +736,29 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
               <View style={[s.section, { borderColor: 'rgba(34,211,238,0.22)' }]}>
                 <View style={s.sectionHeader}>
                   <View style={[s.sectionBar, { backgroundColor: '#22D3EE' }]} />
-                  <Text style={[s.sectionTitle, { color: '#22D3EE' }]}>Notes</Text>
+                  <Text style={[s.sectionTitle, { color: '#22D3EE' }]}>
+                    {t('ui.history.notes', 'Notes')}
+                  </Text>
                 </View>
                 <Text style={s.notesText}>{b.additional_notes}</Text>
+              </View>
+            )}
+
+            {/* Before / After photos */}
+            {(b.status === 'completed' || b.status === 'in_progress') && (
+              <View style={s.section}>
+                <View style={s.sectionHeader}>
+                  <View style={[s.sectionBar, { backgroundColor: '#38BDF8' }]} />
+                  <Text style={s.sectionTitle}>{t('ui.history.jobPhotos', 'Job Photos')}</Text>
+                </View>
+                <BookingPhotosGallery
+                  bookingId={b.id}
+                  title=""
+                  beforeLabel={t('ui.admin.before', 'Before')}
+                  afterLabel={t('ui.admin.after', 'After')}
+                  emptyLabel={t('ui.admin.awaitingPhotos', 'Awaiting photos')}
+                  refreshKey={modalVisible ? b.id : 0}
+                />
               </View>
             )}
 
@@ -721,20 +766,20 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
             <View style={s.pricingCard}>
               <View style={s.sectionHeader}>
                 <View style={[s.sectionBar, { backgroundColor: '#22D3EE' }]} />
-                <Text style={s.sectionTitle}>Price Summary</Text>
+                <Text style={s.sectionTitle}>{t('ui.history.priceSummary', 'Price Summary')}</Text>
               </View>
-              <PriceRow label="Service Price" value={b.base_price} />
+              <PriceRow label={t('ui.bookingFlow.servicePrice', 'Service Price')} value={b.base_price} currencyLabel={t('ui.aed', 'AED')} />
               {Number(b.addons_total) > 0 && (
-                <PriceRow label="Extra Services" value={b.addons_total} />
+                <PriceRow label={t('ui.history.extraServices', 'Extra Services')} value={b.addons_total} currencyLabel={t('ui.aed', 'AED')} />
               )}
               {b.vat_amount != null && Number(b.vat_amount) > 0 && (
-                <PriceRow label="VAT (5%)" value={b.vat_amount} />
+                <PriceRow label={t('ui.bookingFlow.vat', 'VAT (5%)')} value={b.vat_amount} currencyLabel={t('ui.aed', 'AED')} />
               )}
               {b.cash_fee != null && Number(b.cash_fee) > 0 && (
-                <PriceRow label="Cash Fee" value={b.cash_fee} />
+                <PriceRow label={t('ui.bookingFlow.cashFee', 'Cash Fee')} value={b.cash_fee} currencyLabel={t('ui.aed', 'AED')} />
               )}
               <View style={s.pricingDivider} />
-              <PriceRow label="Total" value={b.total_cost ?? b.total_price} bold last />
+              <PriceRow label={t('history.details.total', 'Total')} value={b.total_cost ?? b.total_price} bold last currencyLabel={t('ui.aed', 'AED')} />
             </View>
 
             <View style={{ height: 48 }} />
@@ -752,11 +797,11 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
       {/* Header */}
       <View style={s.header}>
         <View style={{ flex: 1 }}>
-          <Text style={s.headerTitle}>Booking History</Text>
+          <Text style={s.headerTitle}>{t('history.title', 'Booking History')}</Text>
           <Text style={s.headerSubtitle}>
             {bookings.length > 0
-              ? `You have ${bookings.length} booking${bookings.length !== 1 ? 's' : ''}`
-              : 'No bookings yet'}
+              ? tPlural('ui.history.bookingsCount', bookings.length, `You have ${bookings.length} booking`)
+              : t('history.noBookings', 'No bookings yet')}
           </Text>
         </View>
       </View>
@@ -808,12 +853,18 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
               <Text style={s.emptyIcon}>🗓️</Text>
             </View>
             <Text style={s.emptyTitle}>
-              {filterTab === 'all' ? 'No Bookings Yet' : `No ${filterTab} bookings`}
+              {filterTab === 'all'
+                ? t('ui.history.noBookingsTitle', 'No Bookings Yet')
+                : t('ui.history.noStatusBookings', 'No {{status}} bookings', {
+                    values: { status: translateBookingStatus(t, filterTab) },
+                  })}
             </Text>
             <Text style={s.emptySubtitle}>
               {filterTab === 'all'
-                ? "You haven't made any bookings yet. Start by booking your first cleaning service!"
-                : `You don't have any ${filterTab} bookings.`}
+                ? t('history.noBookingsDesc', "You haven't made any bookings yet. Start by booking your first cleaning service!")
+                : t('ui.history.noStatusBookings', "You don't have any {{status}} bookings.", {
+                    values: { status: translateBookingStatus(t, filterTab) },
+                  })}
             </Text>
             {filterTab === 'all' && (
               <TouchableOpacity
@@ -822,7 +873,7 @@ const HistoryScreen: React.FC<HistoryScreenProps> = ({ navigation }) => {
                 activeOpacity={0.85}
               >
                 <LinearGradient colors={['#2563EB', '#3B82F6']} style={s.emptyBtnGrad}>
-                  <Text style={s.emptyBtnText}>📅  Book Your First Service</Text>
+                  <Text style={s.emptyBtnText}>{t('ui.history.bookFirst', '📅  Book Your First Service')}</Text>
                 </LinearGradient>
               </TouchableOpacity>
             )}

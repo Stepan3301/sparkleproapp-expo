@@ -1,25 +1,77 @@
 // Simple translation utility for React Native
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Localization from 'expo-localization';
 import enTranslations from '../i18n/locales/en.json';
 import ruTranslations from '../i18n/locales/ru.json';
 
-type Translations = typeof enTranslations;
-
 const translations = {
   en: enTranslations,
-  ru: ruTranslations
+  ru: ruTranslations,
 } as const;
 
 const STORAGE_KEY = 'i18nextLng';
+
+export type TOptions = {
+  count?: number;
+  values?: Record<string, string | number>;
+};
+
+let cachedLanguage = 'en';
+
+const getNestedValue = (data: Record<string, unknown>, key: string): unknown => {
+  let result: unknown = data;
+  for (const part of key.split('.')) {
+    if (result && typeof result === 'object' && part in (result as Record<string, unknown>)) {
+      result = (result as Record<string, unknown>)[part];
+    } else {
+      return undefined;
+    }
+  }
+  return result;
+};
+
+const applyOptions = (text: string, options?: TOptions): string => {
+  let result = text;
+  if (options?.count !== undefined) {
+    result = result.replace(/\{\{count\}\}/g, String(options.count));
+  }
+  if (options?.values) {
+    for (const [key, value] of Object.entries(options.values)) {
+      result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(value));
+    }
+  }
+  return result;
+};
+
+export const resolveTranslation = (
+  lang: string,
+  key: string,
+  fallback?: string,
+  options?: TOptions,
+): string => {
+  const translationData = translations[lang as keyof typeof translations] || translations.en;
+
+  if (options?.count !== undefined) {
+    const pluralValue = getNestedValue(translationData as Record<string, unknown>, `${key}_plural`);
+    if (typeof pluralValue === 'string' && options.count !== 1) {
+      return applyOptions(pluralValue, options);
+    }
+  }
+
+  const value = getNestedValue(translationData as Record<string, unknown>, key);
+  if (typeof value === 'string') {
+    return applyOptions(value, options);
+  }
+
+  return applyOptions(fallback ?? key, options);
+};
 
 export const getCurrentLanguage = async (): Promise<string> => {
   try {
     const stored = await AsyncStorage.getItem(STORAGE_KEY);
     if (stored) return stored;
-    
-    // Get device language
-    const deviceLang = Localization.locale.split('-')[0];
+    const deviceLang = Localization.getLocales()[0]?.languageCode ?? 'en';
     return deviceLang === 'ru' ? 'ru' : 'en';
   } catch {
     return 'en';
@@ -34,118 +86,64 @@ export const setLanguage = async (lang: string): Promise<void> => {
   }
 };
 
-export const t = async (key: string, fallback?: string, options?: { count?: number }): Promise<string> => {
-  const lang = (await getCurrentLanguage()) as keyof typeof translations;
-  const translationData = translations[lang] || translations.en;
-  
-  // Simple nested key access
-  let result: any = translationData;
-  
-  // Handle pluralization
-  if (options?.count !== undefined) {
-    // Try to find plural key first
-    const pluralKey = `${key}_plural`;
-    const keys = pluralKey.split('.');
-    
-    for (const k of keys) {
-      if (result && typeof result === 'object' && k in result) {
-        result = result[k];
-      } else {
-        break;
-      }
-    }
-    
-    // If plural key exists and count > 1, use it
-    if (typeof result === 'string' && options.count > 1) {
-      return result.replace('{{count}}', options.count.toString());
-    }
-    
-    // Reset for singular key
-    result = translationData;
-  }
-  
-  // Regular key access
-  const keys = key.split('.');
-  for (const k of keys) {
-    if (result && typeof result === 'object' && k in result) {
-      result = result[k];
-    } else {
-      return fallback || key;
-    }
-  }
-  
-  let finalResult = typeof result === 'string' ? result : (fallback || key);
-  
-  // Replace placeholders
-  if (options?.count !== undefined) {
-    finalResult = finalResult.replace('{{count}}', options.count.toString());
-  }
-  
-  return finalResult;
-};
-
-// Synchronous version for use in components (uses cached language)
-let cachedLanguage: string = 'en';
-
 export const initI18n = async (): Promise<void> => {
   cachedLanguage = await getCurrentLanguage();
 };
 
-export const tSync = (key: string, fallback?: string, options?: { count?: number }): string => {
-  const lang = cachedLanguage as keyof typeof translations;
-  const translationData = translations[lang] || translations.en;
-  
-  let result: any = translationData;
-  
-  if (options?.count !== undefined) {
-    const pluralKey = `${key}_plural`;
-    const keys = pluralKey.split('.');
-    
-    for (const k of keys) {
-      if (result && typeof result === 'object' && k in result) {
-        result = result[k];
-      } else {
-        break;
-      }
-    }
-    
-    if (typeof result === 'string' && options.count > 1) {
-      return result.replace('{{count}}', options.count.toString());
-    }
-    
-    result = translationData;
-  }
-  
-  const keys = key.split('.');
-  for (const k of keys) {
-    if (result && typeof result === 'object' && k in result) {
-      result = result[k];
-    } else {
-      return fallback || key;
-    }
-  }
-  
-  let finalResult = typeof result === 'string' ? result : (fallback || key);
-  
-  if (options?.count !== undefined) {
-    finalResult = finalResult.replace('{{count}}', options.count.toString());
-  }
-  
-  return finalResult;
+export const tSync = (key: string, fallback?: string, options?: TOptions): string =>
+  resolveTranslation(cachedLanguage, key, fallback, options);
+
+export const t = async (key: string, fallback?: string, options?: TOptions): Promise<string> => {
+  const lang = await getCurrentLanguage();
+  return resolveTranslation(lang, key, fallback, options);
+};
+
+interface LanguageContextValue {
+  language: string;
+  changeLanguage: (lang: string) => Promise<void>;
+}
+
+const LanguageContext = createContext<LanguageContextValue>({
+  language: 'en',
+  changeLanguage: async () => {},
+});
+
+export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [language, setLanguageState] = useState(cachedLanguage);
+
+  useEffect(() => {
+    initI18n().then(() => setLanguageState(cachedLanguage));
+  }, []);
+
+  const changeLanguage = useCallback(async (lang: string) => {
+    await setLanguage(lang);
+    cachedLanguage = lang;
+    setLanguageState(lang);
+  }, []);
+
+  return React.createElement(
+    LanguageContext.Provider,
+    { value: { language, changeLanguage } },
+    children,
+  );
 };
 
 export const useSimpleTranslation = () => {
-  const changeLanguage = async (lang: string) => {
-    await setLanguage(lang);
-    cachedLanguage = lang;
-  };
-  
-  return {
-    t: tSync,
-    tPlural: (key: string, count: number, fallback?: string) => tSync(key, fallback, { count }),
-    i18n: {
-      language: cachedLanguage,
-      changeLanguage
-    }
-  };
+  const { language, changeLanguage } = useContext(LanguageContext);
+
+  const tBound = useCallback(
+    (key: string, fallback?: string, options?: TOptions) =>
+      resolveTranslation(language, key, fallback, options),
+    [language],
+  );
+
+  return useMemo(
+    () => ({
+      t: tBound,
+      tPlural: (key: string, count: number, fallback?: string, values?: Record<string, string | number>) =>
+        tBound(key, fallback, { count, values }),
+      i18n: { language, changeLanguage },
+    }),
+    [language, changeLanguage, tBound],
+  );
 };

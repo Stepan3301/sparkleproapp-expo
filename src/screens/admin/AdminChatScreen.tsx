@@ -9,6 +9,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { supabase } from '../../lib/supabase';
 import { RootStackParamList } from '../../navigation/types';
+import { useSimpleTranslation } from '../../utils/i18n';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -33,12 +34,18 @@ const formatRelativeTime = (iso: string | null): string => {
 
 // ─── Chat Thread Item ─────────────────────────────────────────────────────────
 
-const ThreadItem = ({ item, onPress }: { item: any; onPress: () => void }) => {
+const ThreadItem = ({
+  item, onPress, t,
+}: {
+  item: any;
+  onPress: () => void;
+  t: (key: string, fallback?: string, options?: { values?: Record<string, string | number> }) => string;
+}) => {
   const cfg = STATUS_CFG[item.status] ?? STATUS_CFG.pending;
-  const customerName = (item.customer_name ?? 'Customer').trim();
+  const customerName = (item.customer_name ?? t('ui.customer', 'Customer')).trim();
   const initial = (customerName || '?')[0]?.toUpperCase();
-  const serviceName  = item.services?.name ?? 'Cleaning Service';
-  const lastMsg      = item.last_message ?? 'Tap to open conversation';
+  const serviceName  = item.services?.name ?? t('ui.cleaningService', 'Cleaning Service');
+  const lastMsg      = item.last_message ?? t('ui.admin.tapToOpen', 'Tap to open conversation');
   const hasUnread    = (item.unread_count ?? 0) > 0;
 
   return (
@@ -58,7 +65,9 @@ const ThreadItem = ({ item, onPress }: { item: any; onPress: () => void }) => {
           <Text style={s.threadTime}>{formatRelativeTime(item.last_message_at ?? item.updated_at)}</Text>
         </View>
         <View style={s.threadMid}>
-          <Text style={s.orderRef}>Order #{item.id} · {serviceName}</Text>
+          <Text style={s.orderRef}>
+            {t('ui.admin.orderNumber', 'Order #{{id}}', { values: { id: item.id } })} · {serviceName}
+          </Text>
         </View>
         <Text style={[s.lastMsg, hasUnread && { color: '#E8EDF5', fontWeight: '600' }]} numberOfLines={1}>
           {lastMsg}
@@ -80,6 +89,7 @@ const ThreadItem = ({ item, onPress }: { item: any; onPress: () => void }) => {
 const AdminChatScreen: React.FC = () => {
   const insets     = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
+  const { t } = useSimpleTranslation();
 
   const [threads, setThreads]       = useState<any[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -154,9 +164,11 @@ const AdminChatScreen: React.FC = () => {
 
       {/* ── Header ── */}
       <View style={s.header}>
-        <Text style={s.title}>Chat</Text>
+        <Text style={s.title}>{t('ui.admin.tabs.chat', 'Chat')}</Text>
         <View style={s.headerBadge}>
-          <Text style={s.headerBadgeText}>{threads.filter(t => t.unread_count > 0).length} unread</Text>
+          <Text style={s.headerBadgeText}>
+            {t('ui.admin.unread', '{{count}} unread', { values: { count: threads.filter(th => th.unread_count > 0).length } })}
+          </Text>
         </View>
       </View>
 
@@ -165,7 +177,7 @@ const AdminChatScreen: React.FC = () => {
         <Ionicons name="search-outline" size={16} color="#5A6A7A" style={{ marginRight: 8 }} />
         <TextInput
           style={s.searchInput}
-          placeholder="Search by customer or order..."
+          placeholder={t('ui.admin.searchChat', 'Search by customer or order...')}
           placeholderTextColor="#5A6A7A"
           value={search}
           onChangeText={setSearch}
@@ -187,11 +199,12 @@ const AdminChatScreen: React.FC = () => {
           renderItem={({ item }) => (
             <ThreadItem
               item={item}
+              t={t}
               onPress={() => navigation.navigate('AdminChatConversation', {
                 bookingId:    item.id,
                 customerId:   item.customer_id,
-                customerName: (item.customer_name ?? 'Customer').trim(),
-                serviceName:  item.services?.name ?? 'Cleaning Service',
+                customerName: (item.customer_name ?? t('ui.customer', 'Customer')).trim(),
+                serviceName:  item.services?.name ?? t('ui.cleaningService', 'Cleaning Service'),
                 serviceDate:  item.service_date,
                 serviceTime:  item.service_time,
                 orderStatus:  item.status,
@@ -204,8 +217,8 @@ const AdminChatScreen: React.FC = () => {
           ListEmptyComponent={
             <View style={s.empty}>
               <Ionicons name="chatbubbles-outline" size={44} color="#38BDF8" />
-              <Text style={s.emptyTitle}>No conversations yet</Text>
-              <Text style={s.emptyText}>Chats will appear here when customers message you.</Text>
+              <Text style={s.emptyTitle}>{t('ui.admin.noConversations', 'No conversations yet')}</Text>
+              <Text style={s.emptyText}>{t('ui.admin.noConversationsDesc', 'Chats will appear here when customers message you.')}</Text>
             </View>
           }
         />

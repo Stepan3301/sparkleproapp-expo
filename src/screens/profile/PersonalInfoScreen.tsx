@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { useSimpleTranslation } from '../../utils/i18n';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -25,12 +26,13 @@ interface InfoRow {
 const PersonalInfoScreen = ({ navigation }: { navigation: any }) => {
   const insets = useSafeAreaInsets();
   const { user, profile } = useAuth();
+  const { t, i18n } = useSimpleTranslation();
 
   const [fullName, setFullName] = useState('');
   const [phone, setPhone]       = useState('');
-  const [language, setLanguage] = useState('English');
   const [saving, setSaving]     = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const languageLabel = i18n.language === 'ru' ? t('ui.russian') : t('ui.english');
 
   useEffect(() => {
     setFullName(profile?.full_name || user?.user_metadata?.full_name || '');
@@ -51,39 +53,39 @@ const PersonalInfoScreen = ({ navigation }: { navigation: any }) => {
         .update({ full_name: fullName.trim(), phone_number: phone.trim() })
         .eq('id', user.id);
       if (error) throw error;
-      Alert.alert('Saved', 'Your profile has been updated.');
+      Alert.alert(t('ui.personalInfo.saved'), t('ui.personalInfo.savedMessage'));
       setEditMode(false);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save. Please try again.');
+      Alert.alert(t('common.error'), err.message || t('ui.personalInfo.saveFailed'));
     } finally {
       setSaving(false);
     }
   };
 
-  const rows: InfoRow[] = [
+  const rows: InfoRow[] = useMemo(() => [
     {
-      id: 'name', label: 'Full Name', icon: 'person',
+      id: 'name', label: t('personalInfo.fullName'), icon: 'person',
       iconGradient: ['#22D3EE', '#0891B2'], value: fullName,
-      placeholder: 'Your full name', editable: true,
+      placeholder: t('personalInfo.fullNamePlaceholder'), editable: true,
     },
     {
-      id: 'email', label: 'Email', icon: 'mail',
+      id: 'email', label: t('personalInfo.email'), icon: 'mail',
       iconGradient: ['#3B82F6', '#1D4ED8'], value: user?.email || '',
-      placeholder: 'Email address', editable: false,
+      placeholder: t('auth.email'), editable: false,
       keyboardType: 'email-address',
     },
     {
-      id: 'phone', label: 'Phone', icon: 'call',
+      id: 'phone', label: t('personalInfo.phoneNumber'), icon: 'call',
       iconGradient: ['#10B981', '#059669'], value: phone,
-      placeholder: '+971 XX XXX XXXX', editable: true,
+      placeholder: t('personalInfo.phoneNumberPlaceholder'), editable: true,
       keyboardType: 'phone-pad',
     },
     {
-      id: 'language', label: 'Language', icon: 'globe',
-      iconGradient: ['#0F766E', '#0D9488'], value: language,
-      placeholder: 'Language', editable: false,
+      id: 'language', label: t('profile.language'), icon: 'globe',
+      iconGradient: ['#5B3FD4', '#7C3AED'], value: languageLabel,
+      placeholder: t('profile.language'), editable: false,
     },
-  ];
+  ], [t, fullName, phone, user?.email, languageLabel]);
 
   return (
     <View style={s.root}>
@@ -94,11 +96,11 @@ const PersonalInfoScreen = ({ navigation }: { navigation: any }) => {
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.75}>
           <Ionicons name="chevron-back" size={22} color="#F1F5F9" />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Personal Info</Text>
+        <Text style={s.headerTitle}>{t('profile.personalInfo')}</Text>
         <TouchableOpacity onPress={() => editMode ? handleSave() : setEditMode(true)} activeOpacity={0.75} style={s.editBtn}>
           {saving
             ? <ActivityIndicator size="small" color="#22D3EE" />
-            : <Text style={s.editBtnText}>{editMode ? 'Save' : 'Edit'}</Text>}
+            : <Text style={s.editBtnText}>{editMode ? t('navigation.save') : t('navigation.edit')}</Text>}
         </TouchableOpacity>
       </View>
 
@@ -115,7 +117,7 @@ const PersonalInfoScreen = ({ navigation }: { navigation: any }) => {
                 <Ionicons name="camera" size={14} color="#FFFFFF" />
               </View>
             </View>
-            <Text style={s.avatarName}>{fullName || 'Your Name'}</Text>
+            <Text style={s.avatarName}>{fullName || t('ui.personalInfo.yourName')}</Text>
           </View>
 
           {/* Info rows */}
@@ -139,7 +141,7 @@ const PersonalInfoScreen = ({ navigation }: { navigation: any }) => {
                     />
                   ) : (
                     <Text style={[s.rowValue, !row.value && s.rowValueEmpty]}>
-                      {row.value || 'Not set'}
+                      {row.value || t('ui.notSet')}
                     </Text>
                   )}
                 </View>
@@ -154,7 +156,7 @@ const PersonalInfoScreen = ({ navigation }: { navigation: any }) => {
               <LinearGradient colors={['#0891B2', '#22D3EE']} style={s.saveBtnInner}>
                 {saving
                   ? <ActivityIndicator color="#FFFFFF" />
-                  : <Text style={s.saveBtnText}>Save Changes</Text>}
+                  : <Text style={s.saveBtnText}>{t('ui.saveChanges')}</Text>}
               </LinearGradient>
             </TouchableOpacity>
           )}

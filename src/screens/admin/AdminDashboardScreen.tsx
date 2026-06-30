@@ -10,19 +10,21 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { RootStackParamList } from '../../navigation/types';
+import { useSimpleTranslation } from '../../utils/i18n';
+import { translateBookingStatus, getMonthNames } from '../../utils/translateStatus';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> = {
-  pending:     { label: 'Pending',     color: '#F59E0B', bg: 'rgba(245,158,11,0.18)'  },
-  confirmed:   { label: 'Confirmed',   color: '#38BDF8', bg: 'rgba(56,189,248,0.18)'  },
-  in_progress: { label: 'In Progress', color: '#10B981', bg: 'rgba(16,185,129,0.18)'  },
-  completed:   { label: 'Completed',   color: '#22C55E', bg: 'rgba(34,197,94,0.18)'   },
-  cancelled:   { label: 'Cancelled',   color: '#EF4444', bg: 'rgba(239,68,68,0.18)'   },
-  scheduled:   { label: 'Scheduled',   color: '#8B5CF6', bg: 'rgba(139,92,246,0.18)'  },
+const STATUS_CFG: Record<string, { color: string; bg: string }> = {
+  pending:     { color: '#F59E0B', bg: 'rgba(245,158,11,0.18)'  },
+  confirmed:   { color: '#38BDF8', bg: 'rgba(56,189,248,0.18)'  },
+  in_progress: { color: '#10B981', bg: 'rgba(16,185,129,0.18)'  },
+  completed:   { color: '#22C55E', bg: 'rgba(34,197,94,0.18)'   },
+  cancelled:   { color: '#EF4444', bg: 'rgba(239,68,68,0.18)'   },
+  scheduled:   { color: '#8B5CF6', bg: 'rgba(139,92,246,0.18)'  },
 };
 
 const getServiceIcon = (name: string | null | undefined): IoniconName => {
@@ -47,18 +49,19 @@ const formatTime = (t: string | null): string => {
   return `${dh}:${String(m).padStart(2, '0')} ${period}`;
 };
 
-const getGreeting = () => {
+const getGreeting = (t: (key: string, fallback?: string) => string) => {
   const h = new Date().getHours();
-  if (h < 12) return 'Good Morning';
-  if (h < 17) return 'Good Afternoon';
-  return 'Good Evening';
+  if (h < 12) return t('ui.greetings.morning', 'Good Morning');
+  if (h < 17) return t('ui.greetings.afternoon', 'Good Afternoon');
+  return t('ui.greetings.evening', 'Good Evening');
 };
 
-const getDateLabel = () => {
-  const days   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const getDateLabel = (t: (key: string, fallback?: string) => string) => {
+  const dayFallbacks = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const months = getMonthNames(t);
   const d = new Date();
-  return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  const dayName = t(`common.days.${dayFallbacks[d.getDay()].toLowerCase()}`, dayFallbacks[d.getDay()]);
+  return `${dayName}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -75,10 +78,16 @@ const StatCard = ({ icon, label, value, color, iconBg }: {
   </View>
 );
 
-const OrderRow = ({ order, onPress }: { order: any; onPress: () => void }) => {
+const OrderRow = ({
+  order, onPress, t,
+}: {
+  order: any;
+  onPress: () => void;
+  t: (key: string, fallback?: string) => string;
+}) => {
   const cfg = STATUS_CFG[order.status] ?? STATUS_CFG.pending;
-  const serviceName = order.services?.name ?? order.customer_name ?? 'Cleaning Service';
-  const customerName = (order.customer_name ?? 'Customer').trim();
+  const serviceName = order.services?.name ?? t('ui.cleaningService', 'Cleaning Service');
+  const customerName = (order.customer_name ?? t('ui.customer', 'Customer')).trim();
 
   return (
     <TouchableOpacity style={s.orderRow} onPress={onPress} activeOpacity={0.78}>
@@ -91,7 +100,9 @@ const OrderRow = ({ order, onPress }: { order: any; onPress: () => void }) => {
         <Text style={s.orderMeta}>{customerName}  ·  {formatTime(order.service_time)}</Text>
       </View>
       <View style={[s.statusBadge, { backgroundColor: cfg.bg }]}>
-        <Text style={[s.statusText, { color: cfg.color }]}>{cfg.label}</Text>
+        <Text style={[s.statusText, { color: cfg.color }]}>
+          {translateBookingStatus(t, order.status)}
+        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -110,6 +121,7 @@ const AdminDashboardScreen: React.FC = () => {
   const insets     = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const { profile } = useAuth();
+  const { t } = useSimpleTranslation();
 
   const [stats, setStats]       = useState({ todayOrders: 0, pending: 0, inProgress: 0, revenueToday: 0 });
   const [activeOrders, setActiveOrders] = useState<any[]>([]);
@@ -157,7 +169,7 @@ const AdminDashboardScreen: React.FC = () => {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const onRefresh = () => { setRefreshing(true); fetchData(); };
-  const firstName = profile?.full_name?.split(' ')[0] ?? 'Admin';
+  const firstName = profile?.full_name?.split(' ')[0] ?? t('ui.admin', 'Admin');
   const adminInit = (profile?.full_name ?? 'A')[0].toUpperCase();
 
   return (
@@ -176,11 +188,11 @@ const AdminDashboardScreen: React.FC = () => {
               <View style={s.avatar}>
                 <Text style={s.avatarText}>{adminInit}</Text>
               </View>
-              <View style={s.adminBadge}><Text style={s.adminBadgeText}>Admin</Text></View>
+              <View style={s.adminBadge}><Text style={s.adminBadgeText}>{t('ui.admin', 'Admin')}</Text></View>
             </View>
             <View style={{ marginLeft: 12 }}>
-              <Text style={s.greeting}>{getGreeting()}, {firstName}</Text>
-              <Text style={s.dateLabel}>{getDateLabel()}</Text>
+              <Text style={s.greeting}>{getGreeting(t)}, {firstName}</Text>
+              <Text style={s.dateLabel}>{getDateLabel(t)}</Text>
             </View>
           </View>
           <TouchableOpacity style={s.bellBtn}>
@@ -200,18 +212,18 @@ const AdminDashboardScreen: React.FC = () => {
           contentContainerStyle={{ paddingHorizontal: 18, gap: 10, paddingBottom: 4 }}
           style={{ marginBottom: 8 }}
         >
-          <StatCard icon="calendar"        label="Today Orders" value={String(stats.todayOrders)} color="#38BDF8" iconBg="rgba(56,189,248,0.14)" />
-          <StatCard icon="time"             label="Pending"      value={String(stats.pending)}     color="#F59E0B" iconBg="rgba(245,158,11,0.14)" />
-          <StatCard icon="checkmark-circle" label="In Progress"  value={String(stats.inProgress)}  color="#10B981" iconBg="rgba(16,185,129,0.14)" />
-          <StatCard icon="cash-outline"     label="AED Today"    value={stats.revenueToday.toLocaleString('en-AE', { maximumFractionDigits: 0 })} color="#E8EDF5" iconBg="rgba(232,237,245,0.1)" />
+          <StatCard icon="calendar"        label={t('ui.admin.todayOrders', 'Today Orders')} value={String(stats.todayOrders)} color="#38BDF8" iconBg="rgba(56,189,248,0.14)" />
+          <StatCard icon="time"             label={t('ui.admin.pending', 'Pending')}      value={String(stats.pending)}     color="#F59E0B" iconBg="rgba(245,158,11,0.14)" />
+          <StatCard icon="checkmark-circle" label={t('ui.admin.inProgress', 'In Progress')}  value={String(stats.inProgress)}  color="#10B981" iconBg="rgba(16,185,129,0.14)" />
+          <StatCard icon="cash-outline"     label={t('ui.admin.aedToday', 'AED Today')}    value={stats.revenueToday.toLocaleString('en-AE', { maximumFractionDigits: 0 })} color="#E8EDF5" iconBg="rgba(232,237,245,0.1)" />
         </ScrollView>
 
         {/* ── Active Orders ── */}
         <View style={s.section}>
           <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Active Orders</Text>
+            <Text style={s.sectionTitle}>{t('ui.admin.activeOrders', 'Active Orders')}</Text>
             <TouchableOpacity onPress={() => navigation.navigate('AdminTabs' as any)}>
-              <Text style={s.seeAll}>See All</Text>
+              <Text style={s.seeAll}>{t('ui.seeAll', 'See All')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -220,13 +232,14 @@ const AdminDashboardScreen: React.FC = () => {
           ) : activeOrders.length === 0 ? (
             <View style={s.emptyBox}>
               <Ionicons name="checkmark-done-circle-outline" size={36} color="#38BDF8" />
-              <Text style={s.emptyText}>No active orders</Text>
+              <Text style={s.emptyText}>{t('ui.admin.noActiveOrders', 'No active orders')}</Text>
             </View>
           ) : (
             activeOrders.map(order => (
               <OrderRow
                 key={order.id}
                 order={order}
+                t={t}
                 onPress={() => navigation.navigate('AdminOrderDetail', { bookingId: order.id })}
               />
             ))
@@ -235,12 +248,12 @@ const AdminDashboardScreen: React.FC = () => {
 
         {/* ── Quick Actions ── */}
         <View style={s.section}>
-          <Text style={s.sectionTitle}>Quick Actions</Text>
+          <Text style={s.sectionTitle}>{t('ui.admin.quickActions', 'Quick Actions')}</Text>
           <View style={s.actionsGrid}>
-            <ActionBtn icon="add-circle-outline" label="New Order"  onPress={() => Alert.alert('Coming Soon', 'Create order feature coming soon!')} />
-            <ActionBtn icon="people-outline"     label="Team"       onPress={() => navigation.navigate('AdminTabs' as any)} />
-            <ActionBtn icon="bar-chart-outline"  label="Reports"    onPress={() => Alert.alert('Coming Soon', 'Reports coming soon!')} />
-            <ActionBtn icon="settings-outline"   label="Settings"   onPress={() => navigation.navigate('AdminTabs' as any)} />
+            <ActionBtn icon="add-circle-outline" label={t('ui.admin.newOrder', 'New Order')}  onPress={() => Alert.alert(t('ui.comingSoon', 'Coming Soon'), t('ui.featureComingSoon', 'Create order feature coming soon!', { values: { feature: t('ui.admin.newOrder', 'New Order') } }))} />
+            <ActionBtn icon="people-outline"     label={t('ui.admin.team', 'Team')}       onPress={() => navigation.navigate('AdminTabs' as any)} />
+            <ActionBtn icon="bar-chart-outline"  label={t('ui.admin.reports', 'Reports')}    onPress={() => Alert.alert(t('ui.comingSoon', 'Coming Soon'), t('ui.featureComingSoon', 'Reports coming soon!', { values: { feature: t('ui.admin.reports', 'Reports') } }))} />
+            <ActionBtn icon="settings-outline"   label={t('ui.admin.tabs.settings', 'Settings')}   onPress={() => navigation.navigate('AdminTabs' as any)} />
           </View>
         </View>
       </ScrollView>

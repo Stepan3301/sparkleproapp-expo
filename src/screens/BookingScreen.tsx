@@ -22,93 +22,88 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../contexts/AuthContext';
+import { useGoToAuth } from '../hooks/useGoToAuth';
 import { supabase } from '../lib/supabase';
 import StepIndicator from '../components/ui/StepIndicator';
 import {
   PROPERTY_SIZES,
   getServiceKey,
-  calculateCost,
   getRecommendation,
 } from '../utils/recommendationAlgorithm';
+import { useSimpleTranslation } from '../utils/i18n';
+import { translatePropertySize, getMonthNames, getDayNamesShort, getPackageCopy, formatLocalizedDate, formatLocalizedTime } from '../utils/translateStatus';
+import AddressMapForm, { EMPTY_ADDRESS_FORM, formatAddressFormValue, type AddressFormValue } from '../components/address/AddressMapForm';
+import DeepCleaningPackagesSection from '../components/booking/DeepCleaningPackagesSection';
+import { MIN_BOOKING_HOURS, WINDOW_HOURLY_RATE, isWeekendDate } from '../constants/bookingRules';
+import { DEEP_PACKAGE_SERVICE_IDS, getDeepPackagePrice, VILLA_DEEP_PACKAGES } from '../constants/deepCleaningPackages';
+import { calcBookingPricing, getEffectiveHours } from '../utils/bookingPricing';
 
+const WINDOW_SERVICE_ID = 17;
 const { width } = Dimensions.get('window');
 const ADDON_CARD_W = Math.floor((width - 36) / 3.2); // ~3 cards + peek visible
 
 // ─── Addon icons (static require — one entry per addon ID from DB) ─────────────
 const ADDON_ICONS: Record<string, any> = {
-  '1':  require('../../assets/addon_3d_fridge_cleaning.png'),
-  '2':  require('../../assets/addon_3d_oven_cleaning.png'),
-  '3':  require('../../assets/addon_3d_balcony_cleaning.png'),
-  '4':  require('../../assets/addon_3d_wardrobe_cleaning.png'),
-  '5':  require('../../assets/addon_3d_ironing_service.png'),
-  '11': require('../../assets/addon_3d_inside_oven.png'),
-  '12': require('../../assets/addon_3d_inside_fridge.png'),
-  '14': require('../../assets/addon_3d_inside_cabinets.png'),
-  '15': require('../../assets/addon_3d_laundry_service.png'),
-  '16': require('../../assets/addon_3d_window_cleaning.png'),
-  '19': require('../../assets/addon_3d_sofa_single.png'),
-  '20': require('../../assets/addon_3d_sofa_2seater.png'),
-  '21': require('../../assets/addon_3d_sofa_3seater.png'),
-  '22': require('../../assets/addon_3d_sofa_4seater_lshape.png'),
-  '23': require('../../assets/addon_3d_sofa_5seater.png'),
-  '24': require('../../assets/addon_3d_carpet_small.png'),
-  '25': require('../../assets/addon_3d_carpet_medium.png'),
-  '26': require('../../assets/addon_3d_carpet_large.png'),
-  '27': require('../../assets/addon_3d_carpet_xl.png'),
-  '28': require('../../assets/addon_3d_mattress_single.png'),
-  '29': require('../../assets/addon_3d_mattress_double.png'),
-  '30': require('../../assets/addon_3d_mattress_queen.png'),
-  '31': require('../../assets/addon_3d_mattress_king.png'),
-  '32': require('../../assets/addon_3d_curtain_small.png'),
-  '33': require('../../assets/addon_3d_curtain_medium.png'),
-  '34': require('../../assets/addon_3d_curtain_large.png'),
-  '35': require('../../assets/addon_3d_curtain_xl.png'),
-  '36': require('../../assets/addon_3d_pillows.png'),
+  '1':  require('../../assets/addon_3d_fridge_cleaning.webp'),
+  '2':  require('../../assets/addon_3d_oven_cleaning.webp'),
+  '3':  require('../../assets/addon_3d_balcony_cleaning.webp'),
+  '4':  require('../../assets/addon_3d_wardrobe_cleaning.webp'),
+  '5':  require('../../assets/addon_3d_ironing_service.webp'),
+  '11': require('../../assets/addon_3d_inside_oven.webp'),
+  '12': require('../../assets/addon_3d_inside_fridge.webp'),
+  '14': require('../../assets/addon_3d_inside_cabinets.webp'),
+  '15': require('../../assets/addon_3d_laundry_service.webp'),
+  '16': require('../../assets/addon_3d_window_cleaning.webp'),
+  '19': require('../../assets/addon_3d_sofa_single.webp'),
+  '20': require('../../assets/addon_3d_sofa_2seater.webp'),
+  '21': require('../../assets/addon_3d_sofa_3seater.webp'),
+  '22': require('../../assets/addon_3d_sofa_4seater_lshape.webp'),
+  '23': require('../../assets/addon_3d_sofa_5seater.webp'),
+  '24': require('../../assets/addon_3d_carpet_small.webp'),
+  '25': require('../../assets/addon_3d_carpet_medium.webp'),
+  '26': require('../../assets/addon_3d_carpet_large.webp'),
+  '27': require('../../assets/addon_3d_carpet_xl.webp'),
+  '28': require('../../assets/addon_3d_mattress_single.webp'),
+  '29': require('../../assets/addon_3d_mattress_double.webp'),
+  '30': require('../../assets/addon_3d_mattress_queen.webp'),
+  '31': require('../../assets/addon_3d_mattress_king.webp'),
+  '32': require('../../assets/addon_3d_curtain_small.webp'),
+  '33': require('../../assets/addon_3d_curtain_medium.webp'),
+  '34': require('../../assets/addon_3d_curtain_large.webp'),
+  '35': require('../../assets/addon_3d_curtain_xl.webp'),
+  '36': require('../../assets/addon_3d_pillows.webp'),
 };
 
 // ─── Addon categories ──────────────────────────────────────────────────────────
 const ADDON_CATEGORIES_CONFIG = [
-  { key: 'cleaning',  label: 'Cleaning',  ids: ['1','2','3','4','5','11','12','14','15','16'] },
-  { key: 'sofa',      label: 'Sofa',      ids: ['19','20','21','22','23'] },
-  { key: 'carpet',    label: 'Carpet',    ids: ['24','25','26','27'] },
-  { key: 'mattress',  label: 'Mattress',  ids: ['28','29','30','31'] },
-  { key: 'curtains',  label: 'Curtains',  ids: ['32','33','34','35'] },
-  { key: 'pillows',   label: 'Pillows',   ids: ['36'] },
+  { key: 'cleaning',  ids: ['1','2','3','4','5','11','12','14','15','16'] },
+  { key: 'sofa',      ids: ['19','20','21','22','23'] },
+  { key: 'carpet',    ids: ['24','25','26','27'] },
+  { key: 'mattress',  ids: ['28','29','30','31'] },
+  { key: 'curtains',  ids: ['32','33','34','35'] },
+  { key: 'pillows',   ids: ['36'] },
 ] as const;
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
-const TIME_SLOTS = [
-  '08:00', '09:00', '10:00', '11:00',
-  '12:00', '13:00', '14:00', '15:00',
-  '16:00', '17:00', '18:00', '19:00', '20:00',
-];
-const TIME_LABELS: Record<string, string> = {
-  '08:00': '8:00 AM',  '09:00': '9:00 AM',  '10:00': '10:00 AM', '11:00': '11:00 AM',
-  '12:00': '12:00 PM', '13:00': '1:00 PM',  '14:00': '2:00 PM',  '15:00': '3:00 PM',
-  '16:00': '4:00 PM',  '17:00': '5:00 PM',  '18:00': '6:00 PM',  '19:00': '7:00 PM',
-  '20:00': '8:00 PM',
-};
 
 const SERVICE_CATEGORY_IMAGES: Record<string, any> = {
-  regular:     require('../../assets/icon_regular_cleaning.png'),
-  deep:        require('../../assets/icon_deep_cleaning.png'),
-  packages:    require('../../assets/icon_complete_packages.png'),
-  specialized: require('../../assets/icon_window_cleaning.png'),
+  regular:     require('../../assets/icon_regular_cleaning.webp'),
+  deep:        require('../../assets/icon_deep_cleaning.webp'),
+  packages:    require('../../assets/icon_complete_packages.webp'),
+  specialized: require('../../assets/icon_window_cleaning.webp'),
 };
 
 const SERVICE_CATEGORIES = [
-  { key: 'regular',     title: 'Regular Cleaning',    shortTitle: 'Regular',   price: 'From 35 AED',  serviceIds: [6, 7] },
-  { key: 'deep',        title: 'Deep Cleaning',        shortTitle: 'Deep',      price: 'From 45 AED',  serviceIds: [8, 9] },
-  { key: 'packages',    title: 'Complete Packages',    shortTitle: 'Packages',  price: 'From 299 AED', serviceIds: [10, 11, 12, 13, 14, 15, 16] },
-  { key: 'specialized', title: 'Specialized Services', shortTitle: 'Windows',   price: 'From 20 AED',  serviceIds: [17, 18, 19] },
+  { key: 'regular',     priceAmount: 35,  serviceIds: [6, 7] },
+  { key: 'deep',        priceAmount: 45,  serviceIds: [8, 9] },
+  { key: 'packages',    priceAmount: 350, serviceIds: [10, 20, 21, 22, 23, 24, 25, 26, 27, 30] },
+  { key: 'specialized', priceAmount: 50,  serviceIds: [17] },
 ];
 
 // ─── Package service metadata (icons, banners, inclusions, timing) ──────────────
 interface PackageMeta {
   icon: any;
   banner: any;
-  richDescription: string;
-  inclusions: string[];
   hoursMin: number;
   hoursMax: number;
   cleaners: number;
@@ -116,114 +111,90 @@ interface PackageMeta {
 }
 
 const PACKAGE_SERVICE_ASSETS: Record<number, PackageMeta> = {
-  // 10: Full Villa Deep Cleaning
   10: {
-    icon: require('../../assets/icon_full_villa_deep_cleaning.png'),
-    banner: require('../../assets/banner_full_villa.jpg'),
-    richDescription: 'A comprehensive deep clean for your entire villa, ensuring every corner is spotless and sanitized. Perfect for moving in/out or a thorough seasonal refresh.',
-    inclusions: [
-      'All rooms vacuumed and mopped',
-      'Kitchen surfaces deep cleaned',
-      'Bathrooms fully sanitized',
-      'Windows wiped inside',
-      'Furniture dusted and polished',
-      'Skirting boards and light switches',
-    ],
+    icon: require('../../assets/icon_full_villa_deep_cleaning.webp'),
+    banner: require('../../assets/banner_full_villa.webp'),
     hoursMin: 4, hoursMax: 6, cleaners: 2, isPopular: true,
   },
-  // 11: Full Apartment Deep Cleaning
   11: {
-    icon: require('../../assets/icon_full_apartment.png'),
-    banner: require('../../assets/banner_full_apartment.jpg'),
-    richDescription: 'Thorough deep cleaning for apartments of all sizes, focusing on detail and hygiene in every room.',
-    inclusions: [
-      'All rooms vacuumed and mopped',
-      'Kitchen appliances & surfaces',
-      'Bathrooms sanitized',
-      'Windows wiped inside',
-      'Furniture dusted',
-      'Balcony swept and mopped',
-    ],
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
     hoursMin: 2, hoursMax: 4, cleaners: 1,
   },
-  // 12: Villa Façade Cleaning
   12: {
-    icon: require('../../assets/icon_villa_facade.png'),
-    banner: require('../../assets/banner_villa_facade.jpg'),
-    richDescription: 'Professional exterior façade cleaning to restore the pristine look of your villa. Removes dust, algae, and stains from all exterior surfaces.',
-    inclusions: [
-      'Exterior walls pressure washed',
-      'Ground-floor windows exterior',
-      'Entrance area deep cleaned',
-      'Driveway and pathway swept',
-      'Garden fixtures wiped',
-    ],
+    icon: require('../../assets/icon_villa_facade.webp'),
+    banner: require('../../assets/banner_villa_facade.webp'),
     hoursMin: 3, hoursMax: 5, cleaners: 2,
   },
-  // 13: Move in/Move out
   13: {
-    icon: require('../../assets/icon_move_in_out.png'),
-    banner: require('../../assets/banner_move_in_out.jpg'),
-    richDescription: 'Specialized cleaning for moving in or out, ensuring a completely fresh start. Every surface is treated so the next chapter begins spotlessly.',
-    inclusions: [
-      'Complete property sanitization',
-      'Deep clean all rooms',
-      'Kitchen & appliances inside-out',
-      'Bathrooms deep cleaned',
-      'Walls spot-cleaned',
-      'Wardrobes and cabinets inside',
-    ],
+    icon: require('../../assets/icon_move_in_out.webp'),
+    banner: require('../../assets/banner_move_in_out.webp'),
     hoursMin: 4, hoursMax: 8, cleaners: 2,
   },
-  // 14: Post-construction Cleaning
   14: {
-    icon: require('../../assets/icon_post_construction_final.png'),
-    banner: require('../../assets/banner_post_construction.jpg'),
-    richDescription: 'Intensive cleaning to remove dust, debris, and residue after renovation or construction work. Leaves your property move-in ready.',
-    inclusions: [
-      'Construction dust fully removed',
-      'Floors deep cleaned & polished',
-      'Walls and surfaces wiped',
-      'Windows inside and out',
-      'Fixtures and fittings cleaned',
-      'Debris disposal arranged',
-    ],
+    icon: require('../../assets/icon_post_construction_final.webp'),
+    banner: require('../../assets/banner_post_construction.webp'),
     hoursMin: 5, hoursMax: 8, cleaners: 2,
   },
-  // 15: Kitchen Deep Cleaning
   15: {
-    icon: require('../../assets/icon_kitchen_cleaning.png'),
-    banner: require('../../assets/banner_kitchen.jpg'),
-    richDescription: 'Focused deep cleaning of the entire kitchen area, including all appliances, cabinets, and surfaces to a hygienically clean standard.',
-    inclusions: [
-      'Oven & stovetop deep cleaned',
-      'Refrigerator inside & outside',
-      'Cabinets degreased inside-out',
-      'Countertops sanitized',
-      'Sink and fixtures scrubbed',
-      'Floor deep mopped',
-    ],
+    icon: require('../../assets/icon_kitchen_cleaning.webp'),
+    banner: require('../../assets/banner_kitchen.webp'),
     hoursMin: 2, hoursMax: 3, cleaners: 1,
   },
-  // 16: Bathroom Deep Cleaning
   16: {
-    icon: require('../../assets/icon_bathroom_deep_cleaning.png'),
-    banner: require('../../assets/banner_bathroom.jpg'),
-    richDescription: 'Complete deep cleaning of bathrooms including tiles, grout, fixtures, and all surfaces. Sanitized to the highest hygiene standards.',
-    inclusions: [
-      'Tiles scrubbed and sanitized',
-      'Grout deep cleaned',
-      'Shower/bath descaled',
-      'Toilet fully sanitized',
-      'Mirror and fixtures polished',
-      'Floor deep mopped',
-    ],
+    icon: require('../../assets/icon_bathroom_deep_cleaning.webp'),
+    banner: require('../../assets/banner_bathroom.webp'),
     hoursMin: 1, hoursMax: 2, cleaners: 1,
+  },
+  20: {
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
+    hoursMin: 2, hoursMax: 4, cleaners: 2,
+  },
+  21: {
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
+    hoursMin: 2, hoursMax: 4, cleaners: 2,
+  },
+  22: {
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
+    hoursMin: 3, hoursMax: 5, cleaners: 2, isPopular: true,
+  },
+  23: {
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
+    hoursMin: 4, hoursMax: 6, cleaners: 2,
+  },
+  24: {
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
+    hoursMin: 4, hoursMax: 6, cleaners: 3,
+  },
+  25: {
+    icon: require('../../assets/icon_full_villa_deep_cleaning.webp'),
+    banner: require('../../assets/banner_full_villa.webp'),
+    hoursMin: 4, hoursMax: 6, cleaners: 2,
+  },
+  26: {
+    icon: require('../../assets/icon_full_villa_deep_cleaning.webp'),
+    banner: require('../../assets/banner_full_villa.webp'),
+    hoursMin: 5, hoursMax: 7, cleaners: 2,
+  },
+  27: {
+    icon: require('../../assets/icon_full_villa_deep_cleaning.webp'),
+    banner: require('../../assets/banner_full_villa.webp'),
+    hoursMin: 6, hoursMax: 8, cleaners: 3,
+  },
+  30: {
+    icon: require('../../assets/icon_post_construction_final.webp'),
+    banner: require('../../assets/banner_post_construction.webp'),
+    hoursMin: 4, hoursMax: 8, cleaners: 2,
   },
 };
 
-const isWindowService = (id?: number) => id ? [17, 18, 19].includes(id) : false;
-const requiresPanels = (id?: number) => id ? [17, 18].includes(id) : false;
+const isDeepPackageService = (id?: number) => (id ? DEEP_PACKAGE_SERVICE_IDS.includes(id) : false);
+const isWindowCategory = (category: string | null) => category === 'specialized';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 interface ServiceType { id: number; name: string; description: string; base_price: number; price_per_hour: number | null; is_active: boolean; }
@@ -231,9 +202,9 @@ interface AddonType { id: string; name: string; price: number; description?: str
 interface Address { id: number; street: string; city: string; is_default: boolean; }
 
 // ─── Selection Chip ─────────────────────────────────────────────────────────────
-const Chip = ({ label, selected, onPress, recommended }: { label: string; selected: boolean; onPress: () => void; recommended?: boolean }) => (
+const Chip = ({ label, selected, onPress, recommended, bestLabel }: { label: string; selected: boolean; onPress: () => void; recommended?: boolean; bestLabel?: string }) => (
   <TouchableOpacity onPress={onPress} style={[chipStyles.chip, selected && chipStyles.selected]} activeOpacity={0.75}>
-    {recommended && <View style={chipStyles.badge}><Text style={chipStyles.badgeText}>Best</Text></View>}
+    {recommended && bestLabel && <View style={chipStyles.badge}><Text style={chipStyles.badgeText}>{bestLabel}</Text></View>}
     <Text style={[chipStyles.text, selected && chipStyles.textSelected]}>{label}</Text>
   </TouchableOpacity>
 );
@@ -260,7 +231,11 @@ interface BookingScreenProps { navigation: any; route?: any; }
 const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const { user, isGuest, profile } = useAuth();
+  const goToAuth = useGoToAuth();
+  const { t, tPlural, i18n } = useSimpleTranslation();
   const scrollRef = useRef<ScrollView>(null);
+  const scrollContentRef = useRef<View>(null);
+  const timeSectionRef = useRef<View>(null);
   const weekStripRef = useRef<ScrollView>(null);
   const successAnim = useRef(new Animated.Value(0)).current;
 
@@ -286,6 +261,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const [ownMaterials, setOwnMaterials] = useState(false);
   const [windowPanels, setWindowPanels] = useState(1);
   const [selectedAddons, setSelectedAddons] = useState<AddonType[]>([]);
+  const [deepPropertyType, setDeepPropertyType] = useState<'villa' | 'townhouse'>('villa');
 
   // ── Step 3: Schedule
   const [serviceDate, setServiceDate] = useState('');
@@ -297,9 +273,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
   const [useNewAddress, setUseNewAddress] = useState(false);
-  const [newAddress, setNewAddress] = useState('');
-  const [newAddressFloor, setNewAddressFloor] = useState('');
-  const [newAddressApt, setNewAddressApt] = useState('');
+  const [newAddressForm, setNewAddressForm] = useState<AddressFormValue>({ ...EMPTY_ADDRESS_FORM });
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [additionalNotes, setAdditionalNotes] = useState('');
@@ -311,8 +285,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const [bookingId, setBookingId] = useState<number | null>(null);
 
   // ── Step 3: Availability ─────────────────────────────────────────────────────
-  const [availabilitySlots, setAvailabilitySlots] = useState<{ hour: number; label: string; available: boolean }[]>([]);
+  const [availabilitySlots, setAvailabilitySlots] = useState<{ slot_time: string; label: string; available: boolean }[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [slotsLoadError, setSlotsLoadError] = useState(false);
+  const scrollAfterSlotsLoadRef = useRef(false);
 
   // ── Addon carousel ────────────────────────────────────────────────────────────
   const [addonCategory, setAddonCategory] = useState<string>('cleaning');
@@ -375,6 +351,66 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   }, [categoryRanges]);
 
   // ── Step 3 calendar view state
+  const scrollToTimeSection = useCallback(() => {
+    requestAnimationFrame(() => {
+      if (!timeSectionRef.current || !scrollContentRef.current) return;
+      timeSectionRef.current.measureLayout(
+        scrollContentRef.current,
+        (_x, y) => {
+          scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+        },
+        () => {}
+      );
+    });
+  }, []);
+
+  const getBookingDuration = useCallback((): number => {
+    if (!selectedService) return MIN_BOOKING_HOURS;
+    if (isWindowCategory(selectedCategory)) return getEffectiveHours(selectedHours);
+    if (isDeepPackageService(selectedService.id)) return MIN_BOOKING_HOURS;
+    if (selectedHours) return Math.max(MIN_BOOKING_HOURS, selectedHours);
+    const meta = PACKAGE_SERVICE_ASSETS[selectedService.id];
+    if (meta) return Math.max(MIN_BOOKING_HOURS, meta.hoursMax);
+    return MIN_BOOKING_HOURS;
+  }, [selectedService, selectedCategory, selectedHours]);
+
+  const bookingDuration = useMemo(() => getBookingDuration(), [getBookingDuration]);
+
+  const fetchAvailabilitySlots = useCallback(async (iso: string) => {
+    setLoadingSlots(true);
+    setSlotsLoadError(false);
+    setAvailabilitySlots([]);
+    try {
+      const { data, error } = await supabase.rpc('get_available_slots', {
+        p_date: iso,
+        p_duration_hours: getBookingDuration(),
+      });
+      if (error) throw error;
+      if (Array.isArray(data)) {
+        setAvailabilitySlots(data);
+        setServiceTime(prev => {
+          if (!prev) return prev;
+          const slot = data.find((s: { slot_time: string; available: boolean }) => s.slot_time === prev);
+          return slot?.available ? prev : '';
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load availability:', e);
+      setSlotsLoadError(true);
+    } finally {
+      setLoadingSlots(false);
+      if (scrollAfterSlotsLoadRef.current) {
+        scrollAfterSlotsLoadRef.current = false;
+        scrollToTimeSection();
+      }
+    }
+  }, [getBookingDuration, scrollToTimeSection]);
+
+  useEffect(() => {
+    if (currentStep === 3 && serviceDate) {
+      fetchAvailabilitySlots(serviceDate);
+    }
+  }, [currentStep, serviceDate, bookingDuration, fetchAvailabilitySlots]);
   const [calViewYear,  setCalViewYear]  = useState(() => new Date().getFullYear());
   const [calViewMonth, setCalViewMonth] = useState(() => new Date().getMonth()); // 0-11
 
@@ -426,21 +462,22 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     setOwnMaterials(false);
     setWindowPanels(1);
     setSelectedAddons([]);
+    setDeepPropertyType('villa');
     setServiceDate('');
     setServiceTime('');
     setShowDatePicker(false);
     setDateObj(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d; });
     setSelectedAddressId(null);
     setUseNewAddress(false);
-    setNewAddress('');
-    setNewAddressFloor('');
-    setNewAddressApt('');
+    setNewAddressForm({ ...EMPTY_ADDRESS_FORM });
     setAdditionalNotes('');
     setPaymentMethod('cash');
     setBookingId(null);
     setAddonCategory('cleaning');
     setAvailabilitySlots([]);
     setLoadingSlots(false);
+    setSlotsLoadError(false);
+    scrollAfterSlotsLoadRef.current = false;
     const now = new Date();
     setCalViewYear(now.getFullYear());
     setCalViewMonth(now.getMonth());
@@ -514,8 +551,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
       setSelectedService(services.find(s => s.id === 6) ?? null);
     } else if (selectedCategory === 'deep') {
       setSelectedService(services.find(s => s.id === 8) ?? null);
+    } else if (selectedCategory === 'specialized') {
+      setSelectedService(services.find(s => s.id === WINDOW_SERVICE_ID) ?? null);
     }
-    // For packages/specialized user picks manually
   }, [selectedCategory, services]);
 
   // ─── Deep-link from HomeScreen: jump straight to Step 2 with a package ───────
@@ -532,25 +570,36 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     navigation.setParams({ serviceId: undefined, goToStep2: undefined });
   }, [services, route?.params?.serviceId, route?.params?.goToStep2]);
 
+  const handleSelectDeepPackage = (serviceId: number, propertyType: 'villa' | 'townhouse') => {
+    setDeepPropertyType(propertyType);
+    const svc = services.find(s => s.id === serviceId);
+    if (svc) setSelectedService(svc);
+  };
+
+  const handleSelectPostConstruction = () => {
+    const svc = services.find(s => s.id === 30);
+    if (svc) setSelectedService(svc);
+  };
+
   // ─── Pricing ──────────────────────────────────────────────────────────────────
   const calcPricing = () => {
-    if (!selectedService) return { base: 0, addonsTotal: 0, subtotal: 0, vat: 0, cashFee: 0, total: 0 };
     const addonsTotal = Math.round(selectedAddons.reduce((s, a) => s + a.price, 0));
-    let base = 0;
-
-    if (isWindowService(selectedService.id)) {
-      if (selectedService.id === 19) base = Math.round(Number(selectedService.base_price));
-      else base = Math.round(windowPanels * Number(selectedService.base_price));
-    } else if (!selectedService.price_per_hour || selectedCategory === 'packages') {
-      base = Math.round(Number(selectedService.base_price));
-    } else if (selectedPropertySize && selectedCleaners && selectedHours) {
-      const key = getServiceKey(selectedService.name);
-      base = Math.round(calculateCost(key, selectedCleaners, selectedHours, !ownMaterials));
+    if (!selectedService) {
+      return { base: 0, weekendSurcharge: 0, addonsTotal, subtotal: 0, vat: 0, cashFee: 0, total: 0 };
     }
-    const subtotal = base + addonsTotal;
-    const vat = Math.round(subtotal * 0.05);
-    const cashFee = paymentMethod === 'cash' ? 5 : 0;
-    return { base, addonsTotal, subtotal, vat, cashFee, total: subtotal + vat + cashFee };
+    return calcBookingPricing({
+      selectedCategory,
+      selectedService,
+      selectedPropertySize,
+      selectedCleaners,
+      selectedHours,
+      ownMaterials,
+      serviceDate,
+      selectedAddonsTotal: addonsTotal,
+      paymentMethod,
+      deepPropertyType,
+      isDeepPackage: isDeepPackageService(selectedService.id),
+    });
   };
 
   // ─── Animated step transition ────────────────────────────────────────────────
@@ -597,39 +646,56 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   // ─── Step navigation ──────────────────────────────────────────────────────────
   const canGoNext = (): { ok: boolean; msg?: string } => {
     if (currentStep === 1) {
-      if (!selectedCategory) return { ok: false, msg: 'Please select a service category' };
-      if ((selectedCategory === 'packages' || selectedCategory === 'specialized') && !selectedService)
-        return { ok: false, msg: 'Please select a specific service' };
+      if (!selectedCategory) return { ok: false, msg: t('booking.validation.selectCategory', 'Please select a service category') };
+      if (selectedCategory === 'specialized') {
+        return { ok: !!selectedService };
+      }
+      if (selectedCategory === 'packages' && !selectedService)
+        return { ok: false, msg: t('booking.validation.selectService', 'Please select a specific service') };
       return { ok: true };
     }
     if (currentStep === 2) {
-      if (!selectedService) return { ok: false, msg: 'Please select a service first' };
-      if (isWindowService(selectedService.id)) {
-        if (requiresPanels(selectedService.id) && windowPanels < 1) return { ok: false, msg: 'Please enter number of panels' };
-      } else if (selectedService.price_per_hour && selectedCategory !== 'packages') {
-        if (!selectedPropertySize) return { ok: false, msg: 'Please select property size' };
-        if (!selectedCleaners) return { ok: false, msg: 'Please select number of cleaners' };
-        if (!selectedHours) return { ok: false, msg: 'Please select number of hours' };
+      if (!selectedService) return { ok: false, msg: t('alerts.pleaseSelectService', 'Please select a service first') };
+
+      if (isWindowCategory(selectedCategory)) {
+        if (!selectedHours || selectedHours < MIN_BOOKING_HOURS) {
+          return { ok: false, msg: t('booking.validation.minHours', 'Minimum booking duration is 2 hours') };
+        }
+        return { ok: true };
+      }
+
+      if (isDeepPackageService(selectedService.id)) {
+        return { ok: true };
+      }
+
+      if (selectedService.price_per_hour && selectedCategory !== 'packages') {
+        if (!selectedPropertySize) return { ok: false, msg: t('alerts.pleaseSelectPropertySize', 'Please select property size') };
+        if (!selectedCleaners) return { ok: false, msg: t('alerts.pleaseCompleteServiceConfig', 'Please select number of cleaners') };
+        if (!selectedHours || selectedHours < MIN_BOOKING_HOURS) {
+          return { ok: false, msg: t('booking.validation.minHours', 'Minimum booking duration is 2 hours') };
+        }
       }
       return { ok: true };
     }
     if (currentStep === 3) {
       if (isGuest && !user) {
-        Alert.alert('Sign Up Required', 'Please create an account to complete your booking.', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign Up', onPress: () => navigation.getParent()?.navigate('Auth') },
+        Alert.alert(t('ui.signUpRequired', 'Sign Up Required'), t('ui.bookingFlow.signUpToBook', 'Please create an account to complete your booking.'), [
+          { text: t('navigation.cancel', 'Cancel'), style: 'cancel' },
+          { text: t('ui.signUp', 'Sign Up'), onPress: goToAuth },
         ]);
         return { ok: false };
       }
-      if (!serviceDate) return { ok: false, msg: 'Please select a date' };
-      if (!serviceTime) return { ok: false, msg: 'Please select a time slot' };
+      if (!serviceDate) return { ok: false, msg: t('booking.validation.selectDateTime', 'Please select a date') };
+      if (!serviceTime) return { ok: false, msg: t('booking.validation.selectDateTime', 'Please select a time slot') };
       return { ok: true };
     }
     if (currentStep === 4) {
-      if (!customerName.trim()) return { ok: false, msg: 'Please enter your name' };
-      if (!customerPhone.trim()) return { ok: false, msg: 'Please enter your phone number' };
-      if (!useNewAddress && !selectedAddressId) return { ok: false, msg: 'Please select or add an address' };
-      if (useNewAddress && !newAddress.trim()) return { ok: false, msg: 'Please enter your address' };
+      if (!customerName.trim()) return { ok: false, msg: t('ui.authExtra.validationName', 'Please enter your name') };
+      if (!customerPhone.trim()) return { ok: false, msg: t('ui.authExtra.validationPhone', 'Please enter your phone number') };
+      if (!useNewAddress && !selectedAddressId) return { ok: false, msg: t('alerts.pleaseSelectAddress', 'Please select or add an address') };
+      if (useNewAddress && !newAddressForm.detectedAddress.trim() && !newAddressForm.apartment.trim()) {
+        return { ok: false, msg: t('ui.addresses.searchOrMoveMap', 'Please search or move the map to set your address') };
+      }
       return { ok: true };
     }
     return { ok: true };
@@ -637,7 +703,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
 
   const goNext = () => {
     const { ok, msg } = canGoNext();
-    if (!ok) { if (msg) Alert.alert('Missing Info', msg); return; }
+    if (!ok) { if (msg) Alert.alert(t('ui.bookingFlow.missingInfo', 'Missing Info'), msg); return; }
     if (currentStep === 4) { submitBooking(); return; }
     animateStepChange(currentStep + 1);
   };
@@ -654,35 +720,40 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     try {
       const pricing = calcPricing();
       const cleaners = selectedCleaners ?? 1;
-      const hours = selectedHours ?? 1;
       const duration = getBookingDuration();
+
+      const deepTypeNote = VILLA_DEEP_PACKAGES.some(p => p.serviceId === selectedService.id)
+        ? `Property type: ${deepPropertyType === 'townhouse' ? 'Townhouse' : 'Villa'}`
+        : '';
+      const addressNotes = useNewAddress ? newAddressForm.notes.trim() : '';
+      const combinedNotes = [additionalNotes.trim(), addressNotes, deepTypeNote].filter(Boolean).join('\n');
 
       const bookingData: Record<string, any> = {
         customer_id: user.id,
         service_id: selectedService.id,
         address_id: useNewAddress ? null : selectedAddressId,
-        custom_address: useNewAddress ? `${newAddress}${newAddressFloor ? ` Fl ${newAddressFloor}` : ''}${newAddressApt ? ` Apt ${newAddressApt}` : ''}` : null,
+        custom_address: useNewAddress ? formatAddressFormValue(newAddressForm) : null,
         requested_date: serviceDate,
         requested_time: serviceTime,
         service_date: serviceDate,
         service_time: serviceTime,
         duration_hours: duration,
-        property_size: isWindowService(selectedService.id) ? null : (selectedPropertySize || null),
+        property_size: isWindowCategory(selectedCategory) ? null : (selectedPropertySize || null),
         size_price: null,
-        cleaners_count: isWindowService(selectedService.id) ? 1 : cleaners,
+        cleaners_count: isWindowCategory(selectedCategory) ? 1 : cleaners,
         own_materials: ownMaterials,
-        window_panels_count: requiresPanels(selectedService.id) ? windowPanels : null,
+        window_panels_count: null,
         customer_name: customerName.trim(),
         customer_phone: customerPhone.trim(),
-        additional_notes: additionalNotes.trim() || null,
-        special_instructions: additionalNotes.trim() || null,
+        additional_notes: combinedNotes || null,
+        special_instructions: combinedNotes || null,
         base_price: pricing.base,
         addons_total: pricing.addonsTotal,
         total_price: pricing.subtotal,
         vat_amount: pricing.vat,
         cash_fee: pricing.cashFee,
         total_cost: pricing.total,
-        status: 'pending',   // will be updated to 'confirmed' by the RPC
+        status: 'pending',
       };
 
       // ── Step A: Insert the booking (pending) ──────────────────────────────
@@ -690,10 +761,10 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         .from('bookings')
         .insert(bookingData)
         .select();
-      if (insertError) { Alert.alert('Booking Failed', insertError.message); return; }
+      if (insertError) { Alert.alert(t('ui.bookingFlow.bookingFailed', 'Booking Failed'), insertError.message); return; }
 
       const newBookingId = insertData?.[0]?.id;
-      if (!newBookingId) { Alert.alert('Booking Failed', 'No booking ID returned.'); return; }
+      if (!newBookingId) { Alert.alert(t('ui.bookingFlow.bookingFailed', 'Booking Failed'), t('ui.bookingFlow.noBookingId', 'No booking ID returned.')); return; }
 
       // ── Step B: Insert addons ─────────────────────────────────────────────
       if (selectedAddons.length > 0) {
@@ -705,31 +776,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           total_price: Math.round(a.price),
         }));
         await supabase.from('booking_additional_services').insert(addonRows);
-      }
-
-      // ── Step C: Atomically assign a free team and confirm ─────────────────
-      const { error: assignError } = await supabase.rpc('assign_free_team', {
-        p_booking_id:     newBookingId,
-        p_service_date:   serviceDate,
-        p_service_time:   serviceTime,
-        p_duration_hours: duration,
-      });
-
-      if (assignError) {
-        // NO_TEAMS_AVAILABLE: the RPC already deleted the pending booking
-        if (assignError.message?.includes('NO_TEAMS_AVAILABLE')) {
-          Alert.alert(
-            '⏰ Time Slot Taken',
-            'Someone just booked this slot. Please go back and pick a different time.',
-            [{ text: 'Choose Another Time', onPress: () => animateStepChange(3) }]
-          );
-          return;
-        }
-        // Any other error — roll back addons too
-        await supabase.from('booking_additional_services').delete().eq('booking_id', newBookingId);
-        await supabase.from('bookings').delete().eq('id', newBookingId);
-        Alert.alert('Booking Failed', assignError.message);
-        return;
       }
 
       setBookingId(newBookingId);
@@ -745,7 +791,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         setTimeout(resetBooking, 400);
       }, 3000);
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to create booking. Please try again.');
+      Alert.alert(t('common.error', 'Error'), err?.message || t('alerts.errorCreatingBooking', 'Failed to create booking. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -769,21 +815,11 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   };
 
   const formatDisplayDate = (iso: string) => {
-    if (!iso) return 'Select date';
-    const d = new Date(iso);
-    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    if (!iso) return t('ui.bookingFlow.selectDate', 'Select date');
+    return formatLocalizedDate(iso, i18n.language);
   };
 
-  // ─── Booking duration helper (used for both availability check & submission) ──
-  const getBookingDuration = (): number => {
-    if (!selectedService) return 2;
-    if (isWindowService(selectedService.id)) return 1;
-    if (selectedHours) return selectedHours;
-    // Package service — use hoursMax from metadata
-    const meta = PACKAGE_SERVICE_ASSETS[selectedService.id];
-    if (meta) return meta.hoursMax;
-    return 3;
-  };
+  const formatTimeLabel = (slot: string) => formatLocalizedTime(slot, i18n.language);
 
   // ─── Pricing summary helper ────────────────────────────────────────────────────
   const pricing = calcPricing();
@@ -830,6 +866,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const renderPackageModal = () => {
     const meta = packageModalService ? PACKAGE_SERVICE_ASSETS[packageModalService.id] : null;
     if (!packageModalVisible || !packageModalService || !meta) return null;
+    const pkgCopy = getPackageCopy(t, packageModalService.id, i18n.language);
 
     return (
       <Modal
@@ -871,7 +908,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
               {/* Popular badge */}
               {meta.isPopular && (
                 <View style={bs.popularPill}>
-                  <Text style={bs.popularPillText}>⭐ Popular</Text>
+                  <Text style={bs.popularPillText}>{t('ui.home.popularBadge', '⭐ Popular')}</Text>
                 </View>
               )}
 
@@ -879,11 +916,11 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
               <Text style={bs.serviceName}>{packageModalService.name}</Text>
 
               {/* Rich description */}
-              <Text style={bs.serviceDesc}>{meta.richDescription}</Text>
+              <Text style={bs.serviceDesc}>{pkgCopy.richDescription}</Text>
 
               {/* What's included */}
-              <Text style={bs.inclTitle}>What is included:</Text>
-              {meta.inclusions.map((item, i) => (
+              <Text style={bs.inclTitle}>{t('ui.home.whatIncluded', 'What is included:')}</Text>
+              {pkgCopy.inclusions.map((item, i) => (
                 <View key={i} style={bs.inclRow}>
                   <View style={bs.checkCircle}>
                     <Text style={bs.checkMark}>✓</Text>
@@ -895,11 +932,11 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
               {/* Info badges row */}
               <View style={bs.badgesRow}>
                 <View style={bs.infoBadge}>
-                  <Text style={bs.infoBadgeText}>⏱  {meta.hoursMin}–{meta.hoursMax} hours</Text>
+                  <Text style={bs.infoBadgeText}>{t('ui.home.hoursRange', '⏱  {{min}}–{{max}} hours', { values: { min: meta.hoursMin, max: meta.hoursMax } })}</Text>
                 </View>
                 <View style={bs.infoBadge}>
                   <Text style={bs.infoBadgeText}>
-                    👷  {meta.cleaners} cleaner{meta.cleaners > 1 ? 's' : ''}
+                    {tPlural('ui.home.cleanersCount', meta.cleaners, `👷  ${meta.cleaners} cleaner`)}
                   </Text>
                 </View>
               </View>
@@ -917,7 +954,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                   style={bs.addBtn}
                 >
                   <Text style={bs.addBtnText}>
-                    Add to Booking — {Math.round(Number(packageModalService.base_price))} AED
+                    {t('ui.bookingFlow.addToBooking', 'Add to Booking — {{price}} AED', { values: { price: Math.round(Number(packageModalService.base_price)) } })}
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -934,7 +971,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
       {!selectedCategory ? (
         /* ── Main category selection grid ── */
         <>
-          <SectionHeader title="Select Your Service" subtitle="Choose from our professional cleaning services" />
+          <SectionHeader title={t('booking.steps.selectService', 'Select Your Service')} subtitle={t('booking.steps.selectServiceDesc', 'Choose from our professional cleaning services')} />
           <View style={s.grid2}>
             {SERVICE_CATEGORIES.map(cat => (
               <TouchableOpacity
@@ -950,8 +987,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                 activeOpacity={0.75}
               >
                 <Image source={SERVICE_CATEGORY_IMAGES[cat.key]} style={s.categoryImage} resizeMode="contain" />
-                <Text style={s.categoryTitle}>{cat.title}</Text>
-                <Text style={s.categoryPrice}>{cat.price}</Text>
+                <Text style={s.categoryTitle}>{t(`ui.bookingFlow.categories.${cat.key}`, cat.key)}</Text>
+                <Text style={s.categoryPrice}>{t('ui.bookingFlow.fromPrice', 'From {{price}} AED', { values: { price: cat.priceAmount } })}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -980,7 +1017,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                 activeOpacity={0.7}
               >
                 <Text style={[s.filterTabText, selectedCategory === cat.key && s.filterTabTextActive]}>
-                  {cat.shortTitle}
+                  {t(`ui.bookingFlow.${cat.key}`, cat.key)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -988,66 +1025,28 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
 
           {/* ── Packages: 2-column icon grid ── */}
           {selectedCategory === 'packages' && (
-            <>
-              <Text style={[s.sectionLabel, { marginBottom: 12 }]}>Choose Specific Service</Text>
-              <View style={s.packageGrid}>
-                {services
-                  .filter(svc => SERVICE_CATEGORIES.find(c => c.key === 'packages')?.serviceIds.includes(svc.id))
-                  .map(svc => {
-                    const meta = PACKAGE_SERVICE_ASSETS[svc.id];
-                    return (
-                      <TouchableOpacity
-                        key={svc.id}
-                        style={s.pkgCard}
-                        onPress={() => openPackageModal(svc)}
-                        activeOpacity={0.78}
-                      >
-                        {meta?.isPopular && (
-                          <View style={s.pkgPopular}>
-                            <Text style={s.pkgPopularText}>Popular</Text>
-                          </View>
-                        )}
-                        <View style={s.pkgIconWrap}>
-                          <Image
-                            source={meta?.icon}
-                            style={s.pkgIcon}
-                            resizeMode="contain"
-                          />
-                        </View>
-                        <Text style={s.pkgName} numberOfLines={2}>{svc.name}</Text>
-                        <Text style={s.pkgPrice}>{Math.round(Number(svc.base_price))} AED</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-              </View>
-            </>
+            <DeepCleaningPackagesSection
+              t={t}
+              selectedServiceId={selectedService?.id ?? null}
+              deepPropertyType={deepPropertyType}
+              onSelectPackage={handleSelectDeepPackage}
+              onSelectPostConstruction={handleSelectPostConstruction}
+            />
           )}
 
-          {/* ── Specialized (windows): list view unchanged ── */}
           {selectedCategory === 'specialized' && (
-            <View>
-              <Text style={[s.sectionLabel, { marginBottom: 10 }]}>Choose Specific Service</Text>
-              {services
-                .filter(svc => SERVICE_CATEGORIES.find(c => c.key === 'specialized')?.serviceIds.includes(svc.id))
-                .map(svc => (
-                  <TouchableOpacity
-                    key={svc.id}
-                    style={[s.serviceRow, selectedService?.id === svc.id && s.serviceRowSelected]}
-                    onPress={() => setSelectedService(svc)}
-                    activeOpacity={0.75}
-                  >
-                    <View style={s.serviceRowInfo}>
-                      <Text style={s.serviceRowName}>{svc.name}</Text>
-                      <Text style={s.serviceRowDesc} numberOfLines={2}>{svc.description}</Text>
-                      <Text style={s.serviceRowPrice}>
-                        {svc.price_per_hour ? `${svc.base_price} AED base + ${svc.price_per_hour}/hr` : `${svc.base_price} AED`}
-                      </Text>
-                    </View>
-                    <View style={[s.radio, selectedService?.id === svc.id && s.radioSelected]}>
-                      {selectedService?.id === svc.id && <View style={s.radioDot} />}
-                    </View>
-                  </TouchableOpacity>
-                ))}
+            <View style={s.windowInfoCard}>
+              <Text style={s.windowInfoTitle}>
+                {t('ui.bookingFlow.windowHourlyTitle', 'Window Cleaning')}
+              </Text>
+              <Text style={s.windowInfoPrice}>
+                {t('ui.bookingFlow.windowHourlyRate', '{{rate}} AED / hour · min {{min}} hours', {
+                  values: { rate: WINDOW_HOURLY_RATE, min: MIN_BOOKING_HOURS },
+                })}
+              </Text>
+              <Text style={s.windowInfoHint}>
+                {t('ui.bookingFlow.windowHourlyHint', 'Choose duration in the next step. Weekend surcharge +5 AED/hour applies Sat–Sun.')}
+              </Text>
             </View>
           )}
 
@@ -1061,13 +1060,13 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                   resizeMode="contain"
                 />
                 <View style={{ flex: 1 }}>
-                  <Text style={s.categoryBannerTitle}>{SERVICE_CATEGORIES.find(c => c.key === selectedCategory)?.title}</Text>
-                  <Text style={s.categoryBannerSubtitle}>{SERVICE_CATEGORIES.find(c => c.key === selectedCategory)?.price}</Text>
+                  <Text style={s.categoryBannerTitle}>{t(`ui.bookingFlow.categories.${selectedCategory}`, selectedCategory)}</Text>
+                  <Text style={s.categoryBannerSubtitle}>{t('ui.bookingFlow.fromPrice', 'From {{price}} AED', { values: { price: SERVICE_CATEGORIES.find(c => c.key === selectedCategory)?.priceAmount ?? 0 } })}</Text>
                 </View>
               </LinearGradient>
               <View style={s.selectedServiceBanner}>
-                <Text style={s.selectedServiceText}>✅ {selectedService.name} selected</Text>
-                <Text style={s.selectedServiceHint}>Configure details in the next step</Text>
+                <Text style={s.selectedServiceText}>{t('ui.bookingFlow.serviceSelected', '✅ {{name}} selected', { values: { name: selectedService.name } })}</Text>
+                <Text style={s.selectedServiceHint}>{t('ui.bookingFlow.configureNextStep', 'Configure details in the next step')}</Text>
               </View>
             </>
           )}
@@ -1080,34 +1079,58 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   );
 
   const renderStep2 = () => {
-    if (!selectedService) return <View><Text style={s.emptyText}>Go back and select a service first.</Text></View>;
-    const isHourly = !!selectedService.price_per_hour && selectedCategory !== 'packages';
-    const isWindow = isWindowService(selectedService.id);
-    const needsPanels = requiresPanels(selectedService.id);
+    if (!selectedService) return <View><Text style={s.emptyText}>{t('ui.bookingFlow.selectServiceFirst', 'Go back and select a service first.')}</Text></View>;
+    const isWindow = isWindowCategory(selectedCategory);
+    const isDeepPkg = isDeepPackageService(selectedService.id);
+    const isHourly = !!selectedService.price_per_hour && selectedCategory !== 'packages' && !isDeepPkg;
 
     return (
       <View>
-        <SectionHeader title="Configure Your Service" subtitle="Choose your preferences and add-ons" />
+        <SectionHeader title={t('ui.bookingFlow.configureService', 'Configure Your Service')} subtitle={t('ui.bookingFlow.configureSubtitle', 'Choose your preferences and add-ons')} />
 
-        {/* Window panels */}
-        {isWindow && needsPanels && (
+        {isDeepPkg && (
+          <View style={s.infoBox}>
+            <Text style={s.infoBoxText}>
+              {t('ui.deepCleaning.packageSelected', 'Deep cleaning package selected. See scope of work on the previous step.')}
+            </Text>
+            {serviceDate && isWeekendDate(serviceDate) && (
+              <Text style={[s.infoBoxText, { marginTop: 6 }]}>
+                {t('ui.bookingFlow.weekendNote', 'Weekend surcharge +5 AED/hour applies to hourly services only.')}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {isWindow && (
           <View style={s.configSection}>
-            <Text style={s.configLabel}>🪟 Number of Window Panels</Text>
-            <View style={s.counterRow}>
-              <TouchableOpacity style={s.counterBtn} onPress={() => setWindowPanels(Math.max(1, windowPanels - 1))}><Text style={s.counterBtnText}>−</Text></TouchableOpacity>
-              <Text style={s.counterVal}>{windowPanels}</Text>
-              <TouchableOpacity style={s.counterBtn} onPress={() => setWindowPanels(Math.min(100, windowPanels + 1))}><Text style={s.counterBtnText}>+</Text></TouchableOpacity>
-            </View>
-            <View style={s.infoBox}>
-              <Text style={s.infoBoxText}>{windowPanels} panel{windowPanels !== 1 ? 's' : ''} × {selectedService.base_price} AED = {windowPanels * Number(selectedService.base_price)} AED</Text>
-            </View>
+            <Text style={s.configLabel}>{t('ui.bookingFlow.durationHours', '⏱ Duration (Hours)')}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }} contentContainerStyle={{ paddingHorizontal: 4 }}>
+              <View style={[s.chipRow, { flexWrap: 'nowrap' }]}>
+                {[2, 3, 4, 5, 6, 7, 8].map(h => (
+                  <Chip
+                    key={h}
+                    label={`${h}h`}
+                    selected={selectedHours === h}
+                    onPress={() => setSelectedHours(h)}
+                  />
+                ))}
+              </View>
+            </ScrollView>
+            {selectedHours && (
+              <View style={s.pricePreview}>
+                <Text style={s.pricePreviewLabel}>{t('ui.bookingFlow.estimatedPrice', 'Estimated Price')}</Text>
+                <Text style={s.pricePreviewValue}>
+                  {Math.round(selectedHours * WINDOW_HOURLY_RATE + (serviceDate && isWeekendDate(serviceDate) ? selectedHours * 5 : 0))} {t('ui.aed', 'AED')}
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
         {/* Property size */}
-        {!isWindow && isHourly && (
+        {!isWindow && !isDeepPkg && isHourly && (
           <View style={s.configSection}>
-            <Text style={s.configLabel}>🏠 Property Size</Text>
+            <Text style={s.configLabel}>{t('ui.bookingFlow.propertySize', '🏠 Property Size')}</Text>
             <View style={s.grid2}>
               {PROPERTY_SIZES.map(opt => (
                 <TouchableOpacity
@@ -1116,7 +1139,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                   onPress={() => { setSelectedPropertySize(opt.size); setSelectedCleaners(null); setSelectedHours(null); }}
                   activeOpacity={0.75}
                 >
-                  <Text style={[s.sizeLabel, selectedPropertySize === opt.size && s.sizeLabelSelected]}>{opt.label}</Text>
+                  <Text style={[s.sizeLabel, selectedPropertySize === opt.size && s.sizeLabelSelected]}>{translatePropertySize(t, opt.size)}</Text>
                   <Text style={[s.sizeDetail, selectedPropertySize === opt.size && s.sizeDetailSelected]}>{opt.details}</Text>
                 </TouchableOpacity>
               ))}
@@ -1125,32 +1148,29 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         )}
 
         {/* Materials */}
-        {selectedService && (
-          (!isWindow && (isHourly ? !!selectedPropertySize : true)) ||
-          (isWindow && (selectedService.id === 19 || (needsPanels && windowPanels > 0)))
-        ) && (
+        {selectedService && !isWindow && !isDeepPkg && isHourly && !!selectedPropertySize && (
           <View style={s.configSection}>
-            <Text style={s.configLabel}>🧴 Cleaning Materials</Text>
+            <Text style={s.configLabel}>{t('ui.bookingFlow.materialsTitle', '🧴 Cleaning Materials')}</Text>
             <View style={s.toggleRow}>
               <TouchableOpacity
                 style={[s.toggleOption, !ownMaterials && s.toggleOptionSelected]}
                 onPress={() => handleMaterials(false)}
                 activeOpacity={0.75}
               >
-                <Text style={[s.toggleText, !ownMaterials && s.toggleTextSelected]}>Cleaners Provide</Text>
-                <Text style={[s.toggleHint, !ownMaterials && s.toggleHintSelected]}>Professional supplies</Text>
+                <Text style={[s.toggleText, !ownMaterials && s.toggleTextSelected]}>{t('ui.bookingFlow.cleanersProvide', 'Cleaners Provide')}</Text>
+                <Text style={[s.toggleHint, !ownMaterials && s.toggleHintSelected]}>{t('ui.bookingFlow.professionalSupplies', 'Professional supplies')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.toggleOption, ownMaterials && s.toggleOptionSelected]}
                 onPress={() => handleMaterials(true)}
                 activeOpacity={0.75}
               >
-                <Text style={[s.toggleText, ownMaterials && s.toggleTextSelected]}>Use Own Materials</Text>
-                <Text style={[s.toggleHint, ownMaterials && s.toggleHintSelected]}>Lower cost option</Text>
+                <Text style={[s.toggleText, ownMaterials && s.toggleTextSelected]}>{t('ui.bookingFlow.useOwnMaterials', 'Use Own Materials')}</Text>
+                <Text style={[s.toggleHint, ownMaterials && s.toggleHintSelected]}>{t('ui.bookingFlow.lowerCost', 'Lower cost option')}</Text>
               </TouchableOpacity>
             </View>
             <View style={s.ecoNote}>
-              <Text style={s.ecoNoteText}>🌿 Our materials are powered by TCL eco-friendly supplies</Text>
+              <Text style={s.ecoNoteText}>{t('ui.bookingFlow.ecoMaterials', '🌿 Our materials are powered by TCL eco-friendly supplies')}</Text>
             </View>
           </View>
         )}
@@ -1158,16 +1178,17 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         {/* Cleaners */}
         {!isWindow && isHourly && !!selectedPropertySize && (
           <View style={s.configSection}>
-            <Text style={s.configLabel}>👷 Number of Cleaners</Text>
+            <Text style={s.configLabel}>{t('ui.bookingFlow.numCleaners', '👷 Number of Cleaners')}</Text>
             <View style={s.chipRow}>
               {[1, 2, 3, 4].map(n => {
                 const rec = getRecommendation(getServiceKey(selectedService.name), selectedPropertySize!).recommended_cleaners;
                 return (
                   <Chip
                     key={n}
-                    label={`${n} ${n === 1 ? 'cleaner' : 'cleaners'}`}
+                    label={tPlural('booking.cleaners', n, `${n} cleaner`)}
                     selected={selectedCleaners === n}
                     recommended={n === rec}
+                    bestLabel={t('ui.best', 'Best')}
                     onPress={() => { setSelectedCleaners(n); setSelectedHours(null); }}
                   />
                 );
@@ -1176,7 +1197,12 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
             {selectedCleaners && (
               <View style={s.infoBox}>
                 <Text style={s.infoBoxText}>
-                  💡 {selectedCleaners === 1 ? 'Single cleaner - great for small spaces' : getRecommendation(getServiceKey(selectedService.name), selectedPropertySize!, selectedCleaners).efficiency_message}
+                  💡 {selectedCleaners === 1
+                    ? t('ui.bookingFlow.singleCleanerHint', 'Single cleaner - great for small spaces')
+                    : t(
+                        `ui.bookingFlow.efficiencyMsg${selectedCleaners}`,
+                        getRecommendation(getServiceKey(selectedService.name), selectedPropertySize!, selectedCleaners).efficiency_message,
+                      )}
                 </Text>
               </View>
             )}
@@ -1186,7 +1212,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         {/* Hours */}
         {!isWindow && isHourly && !!selectedPropertySize && !!selectedCleaners && (
           <View style={s.configSection}>
-            <Text style={s.configLabel}>⏱ Duration (Hours)</Text>
+            <Text style={s.configLabel}>{t('ui.bookingFlow.durationHours', '⏱ Duration (Hours)')}</Text>
             {/* paddingTop gives the floating 'Best' badge room above chips;
                 marginTop compensates so layout doesn't shift */}
             <ScrollView
@@ -1199,15 +1225,17 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                 {[2, 3, 4, 5, 6, 7].map(h => {
                   const rec = Math.round(getRecommendation(getServiceKey(selectedService.name), selectedPropertySize!, selectedCleaners).recommended_hours);
                   return (
-                    <Chip key={h} label={`${h}h`} selected={selectedHours === h} recommended={h === rec} onPress={() => setSelectedHours(h)} />
+                    <Chip key={h} label={`${h}h`} selected={selectedHours === h} recommended={h === rec} bestLabel={t('ui.best', 'Best')} onPress={() => setSelectedHours(h)} />
                   );
                 })}
               </View>
             </ScrollView>
             {selectedHours && selectedCleaners && selectedPropertySize && (
               <View style={s.pricePreview}>
-                <Text style={s.pricePreviewLabel}>Estimated Price</Text>
-                <Text style={s.pricePreviewValue}>{Math.round(calculateCost(getServiceKey(selectedService.name), selectedCleaners, selectedHours, !ownMaterials))} AED</Text>
+                <Text style={s.pricePreviewLabel}>{t('ui.bookingFlow.estimatedPrice', 'Estimated Price')}</Text>
+                <Text style={s.pricePreviewValue}>
+                  {calcPricing().subtotal - calcPricing().addonsTotal} {t('ui.aed', 'AED')}
+                </Text>
               </View>
             )}
           </View>
@@ -1222,8 +1250,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
             <View style={s.carouselSection}>
               {/* Header */}
               <View style={s.carouselHeader}>
-                <Text style={s.carouselTitle}>✦  Extra Services</Text>
-                <Text style={s.carouselSubtitle}>Enhance your cleaning experience</Text>
+                <Text style={s.carouselTitle}>{t('ui.bookingFlow.extraServices', '✦  Extra Services')}</Text>
+                <Text style={s.carouselSubtitle}>{t('ui.bookingFlow.extraServicesSubtitle', 'Enhance your cleaning experience')}</Text>
               </View>
 
               {/* Category tabs — tap jumps the carousel to that section */}
@@ -1241,7 +1269,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                     activeOpacity={0.75}
                   >
                     <Text style={[s.catTabText, addonCategory === cat.key && s.catTabTextActive]}>
-                      {cat.label}
+                      {t(`ui.bookingFlow.addonCategories.${cat.key}`, cat.key)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -1290,7 +1318,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                       <View style={s.addonCard2Foot}>
                         <View style={{ flex: 1 }}>
                           <Text style={s.addonCard2Name} numberOfLines={2}>{addon.name}</Text>
-                          <Text style={s.addonCard2Price}>{addon.price} AED</Text>
+                          <Text style={s.addonCard2Price}>{addon.price} {t('ui.aed', 'AED')}</Text>
                         </View>
                         <View style={[s.addonCard2Circle, isSelected && s.addonCard2CircleSel]}>
                           {isSelected && <Text style={s.addonCard2Check}>✓</Text>}
@@ -1316,12 +1344,12 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
               {/* Selected add-ons list */}
               {selectedAddons.length > 0 && (
                 <View style={s.selectedAddonsList}>
-                  <Text style={s.selectedAddonsTitle}>Selected Add-ons</Text>
+                  <Text style={s.selectedAddonsTitle}>{t('ui.bookingFlow.selectedAddons', 'Selected Add-ons')}</Text>
                   {selectedAddons.map(addon => (
                     <View key={addon.id} style={s.selectedAddonRow}>
                       <Text style={s.selectedAddonName}>{addon.name}</Text>
                       <View style={s.selectedAddonRight}>
-                        <Text style={s.selectedAddonPrice}>{addon.price} AED</Text>
+                        <Text style={s.selectedAddonPrice}>{addon.price} {t('ui.aed', 'AED')}</Text>
                         <TouchableOpacity
                           style={s.selectedAddonMinus}
                           onPress={() => toggleAddon(addon)}
@@ -1347,8 +1375,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     now.setHours(0, 0, 0, 0);
     const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    const DOW = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const DOW = getDayNamesShort(t);
+    const MONTH_NAMES = getMonthNames(t);
 
     // Timezone-safe ISO builder
     const toIso = (y: number, m: number, d: number) =>
@@ -1388,17 +1416,15 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
       else setCalViewMonth(m => m + 1);
     };
 
-    const handleDaySelect = async (iso: string) => {
+    const handleDaySelect = (iso: string) => {
       setServiceDate(iso);
-      setServiceTime('');          // reset time whenever date changes
-      setAvailabilitySlots([]);    // clear stale slots immediately
+      setServiceTime('');
+      scrollAfterSlotsLoadRef.current = true;
 
-      // Sync calendar view to selected month
       const [y, mo] = iso.split('-').map(Number);
       setCalViewYear(y);
       setCalViewMonth(mo - 1);
 
-      // Auto-scroll the week strip so the chosen day is centred
       const idx = stripDays.findIndex(d => d.iso === iso);
       if (idx >= 0) {
         const CARD_W = 62;
@@ -1408,23 +1434,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         const cx     = PAD + idx * step + CARD_W / 2;
         const scrollX = Math.max(0, cx - width / 2);
         weekStripRef.current?.scrollTo({ x: scrollX, animated: true });
-      }
-
-      // ── Fetch real-time availability from Supabase RPC ──────────────────────
-      setLoadingSlots(true);
-      try {
-        const duration = getBookingDuration();
-        const { data, error } = await supabase.rpc('get_available_slots', {
-          p_date: iso,
-          p_duration_hours: duration,
-        });
-        if (!error && Array.isArray(data)) {
-          setAvailabilitySlots(data);
-        }
-      } catch (e) {
-        console.error('Failed to load availability:', e);
-      } finally {
-        setLoadingSlots(false);
       }
     };
 
@@ -1522,8 +1531,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         </View>
 
         {/* ── Preferred Time ──────────────────────────────────────────────────── */}
+        <View ref={timeSectionRef} collapsable={false}>
         <Text style={s.calSectionTitle}>
-          {serviceDate ? 'Available Times' : 'Preferred Time'}
+          {serviceDate ? t('ui.bookingFlow.availableTimes', 'Available Times') : t('ui.bookingFlow.preferredTime', 'Preferred Time')}
         </Text>
 
         {loadingSlots ? (
@@ -1531,18 +1541,30 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           <View style={[s.calTimeGrid, { alignItems: 'center', justifyContent: 'center', paddingVertical: 16 }]}>
             <ActivityIndicator color="#22D3EE" size="small" />
             <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, marginTop: 8 }}>
-              Checking availability…
+              {t('ui.bookingFlow.checkingAvailability', 'Checking availability…')}
             </Text>
           </View>
+        ) : slotsLoadError ? (
+          <View style={[s.calTimeGrid, { alignItems: 'center', justifyContent: 'center', paddingVertical: 16 }]}>
+            <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13, textAlign: 'center', marginBottom: 12 }}>
+              {t('ui.bookingFlow.slotsLoadFailed', 'Could not load available times. Please try again.')}
+            </Text>
+            <TouchableOpacity
+              style={[s.calTimeSlot, { minWidth: 120 }]}
+              onPress={() => serviceDate && fetchAvailabilitySlots(serviceDate)}
+              activeOpacity={0.75}
+            >
+              <Text style={s.calTimeSlotText}>{t('ui.bookingFlow.retry', 'Retry')}</Text>
+            </TouchableOpacity>
+          </View>
         ) : availabilitySlots.length > 0 ? (
-          /* Dynamic availability grid */
           <View style={s.calTimeGrid}>
             {availabilitySlots.map(slot => {
-              const isoTime = `${String(slot.hour).padStart(2, '0')}:00`;
+              const isoTime = slot.slot_time;
               const isActive = serviceTime === isoTime;
               return (
                 <TouchableOpacity
-                  key={slot.hour}
+                  key={slot.slot_time}
                   style={[
                     s.calTimeSlot,
                     isActive && s.calTimeSlotSel,
@@ -1560,32 +1582,26 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                     {slot.label}
                   </Text>
                   {!slot.available && (
-                    <Text style={s.calTimeSlotFullLabel}>Full</Text>
+                    <Text style={s.calTimeSlotFullLabel}>{t('ui.full', 'Full')}</Text>
                   )}
                 </TouchableOpacity>
               );
             })}
           </View>
+        ) : serviceDate ? (
+          <View style={[s.calTimeGrid, { alignItems: 'center', justifyContent: 'center', paddingVertical: 16 }]}>
+            <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, textAlign: 'center' }}>
+              {t('ui.bookingFlow.noSlotsAvailable', 'No available times for this date. Try another day.')}
+            </Text>
+          </View>
         ) : (
-          /* Fallback static grid when no date selected yet */
-          <View style={s.calTimeGrid}>
-            {TIME_SLOTS.map(slot => {
-              const isActive = serviceTime === slot;
-              return (
-                <TouchableOpacity
-                  key={slot}
-                  style={[s.calTimeSlot, isActive && s.calTimeSlotSel]}
-                  onPress={() => setServiceTime(slot)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[s.calTimeSlotText, isActive && s.calTimeSlotTextSel]}>
-                    {TIME_LABELS[slot]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+          <View style={[s.calTimeGrid, { alignItems: 'center', justifyContent: 'center', paddingVertical: 16 }]}>
+            <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, textAlign: 'center' }}>
+              {t('ui.bookingFlow.selectDateForTimes', 'Select a date above to see available times.')}
+            </Text>
           </View>
         )}
+        </View>
       </View>
     );
   };
@@ -1593,23 +1609,23 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
   const renderStep4 = () => (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View>
-        <SectionHeader title="Your Details" subtitle="We'll use this to confirm your booking" />
+        <SectionHeader title={t('ui.bookingFlow.yourDetails', 'Your Details')} subtitle={t('ui.bookingFlow.contactSubtitle', "We'll use this to confirm your booking")} />
 
         {/* Contact */}
         <View style={s.configSection}>
-          <Text style={s.configLabel}>👤 Contact Information</Text>
+          <Text style={s.configLabel}>{t('ui.bookingFlow.contactInfo', '👤 Contact Information')}</Text>
           <View style={s.inputWrap}>
-            <Text style={s.inputLabel}>Full Name *</Text>
+            <Text style={s.inputLabel}>{t('ui.bookingFlow.fullNameRequired', 'Full Name *')}</Text>
             <TextInput
               style={s.input}
               value={customerName}
               onChangeText={setCustomerName}
-              placeholder="Your full name"
+              placeholder={t('placeholders.enterYourFullName', 'Your full name')}
               placeholderTextColor="#9CA3AF"
             />
           </View>
           <View style={s.inputWrap}>
-            <Text style={s.inputLabel}>Phone Number *</Text>
+            <Text style={s.inputLabel}>{t('ui.bookingFlow.phoneRequired', 'Phone Number *')}</Text>
             <TextInput
               style={s.input}
               value={customerPhone}
@@ -1623,7 +1639,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
 
         {/* Address */}
         <View style={s.configSection}>
-          <Text style={s.configLabel}>📍 Service Address</Text>
+          <Text style={s.configLabel}>{t('ui.bookingFlow.serviceAddress', '📍 Service Address')}</Text>
           <View style={s.toggleRow}>
             {addresses.length > 0 && (
               <TouchableOpacity
@@ -1631,7 +1647,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                 onPress={() => setUseNewAddress(false)}
                 activeOpacity={0.75}
               >
-                <Text style={[s.toggleText, !useNewAddress && s.toggleTextSelected]}>Saved Address</Text>
+                <Text style={[s.toggleText, !useNewAddress && s.toggleTextSelected]}>{t('ui.bookingFlow.savedAddress', 'Saved Address')}</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -1639,7 +1655,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
               onPress={() => setUseNewAddress(true)}
               activeOpacity={0.75}
             >
-              <Text style={[s.toggleText, (useNewAddress || addresses.length === 0) && s.toggleTextSelected]}>New Address</Text>
+              <Text style={[s.toggleText, (useNewAddress || addresses.length === 0) && s.toggleTextSelected]}>{t('ui.bookingFlow.newAddress', 'New Address')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -1656,7 +1672,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                     <Text style={[s.addressText, selectedAddressId === addr.id && s.addressTextSelected]}>
                       {addr.street}, {addr.city}
                     </Text>
-                    {addr.is_default && <Text style={s.addressDefault}>Default</Text>}
+                    {addr.is_default && <Text style={s.addressDefault}>{t('ui.default', 'Default')}</Text>}
                   </View>
                   <View style={[s.radio, selectedAddressId === addr.id && s.radioSelected]}>
                     {selectedAddressId === addr.id && <View style={s.radioDot} />}
@@ -1665,39 +1681,22 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
               ))}
             </View>
           ) : (
-            <View>
-              <View style={s.inputWrap}>
-                <Text style={s.inputLabel}>Building / Street *</Text>
-                <TextInput
-                  style={s.input}
-                  value={newAddress}
-                  onChangeText={setNewAddress}
-                  placeholder="e.g. Westwood Grande, Al Barsha"
-                  placeholderTextColor="#9CA3AF"
-                />
-              </View>
-              <View style={s.grid2Tight}>
-                <View style={[s.inputWrap, { flex: 1 }]}>
-                  <Text style={s.inputLabel}>Floor (Optional)</Text>
-                  <TextInput style={s.input} value={newAddressFloor} onChangeText={setNewAddressFloor} placeholder="e.g. 5" placeholderTextColor="#9CA3AF" />
-                </View>
-                <View style={[s.inputWrap, { flex: 1 }]}>
-                  <Text style={s.inputLabel}>Apartment (Optional)</Text>
-                  <TextInput style={s.input} value={newAddressApt} onChangeText={setNewAddressApt} placeholder="e.g. 501" placeholderTextColor="#9CA3AF" />
-                </View>
-              </View>
-            </View>
+            <AddressMapForm
+              variant="embedded"
+              value={newAddressForm}
+              onChange={setNewAddressForm}
+            />
           )}
         </View>
 
         {/* Notes */}
         <View style={s.configSection}>
-          <Text style={s.configLabel}>📝 Additional Notes (Optional)</Text>
+          <Text style={s.configLabel}>{t('ui.bookingFlow.additionalNotes', '📝 Additional Notes (Optional)')}</Text>
           <TextInput
             style={[s.input, s.textarea]}
             value={additionalNotes}
             onChangeText={setAdditionalNotes}
-            placeholder="Any special instructions, access codes, or requests..."
+            placeholder={t('booking.notesPlaceholder', 'Any special instructions, access codes, or requests...')}
             placeholderTextColor="#9CA3AF"
             multiline
             numberOfLines={3}
@@ -1706,9 +1705,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
 
         {/* Payment method */}
         <View style={s.configSection}>
-          <Text style={s.configLabel}>💳 Payment Method</Text>
+          <Text style={s.configLabel}>{t('ui.bookingFlow.paymentMethod', '💳 Payment Method')}</Text>
           <View style={s.infoBox}>
-            <Text style={s.infoBoxText}>💡 Currently only cash payment is available. Apple Pay, Tabby and card payments coming soon!</Text>
+            <Text style={s.infoBoxText}>💡 {t('ui.bookingFlow.cashOnlyInfo', 'Currently only cash payment is available. Card and digital payments coming soon.')}</Text>
           </View>
           {/* Cash - active */}
           <TouchableOpacity
@@ -1718,8 +1717,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           >
             <Text style={s.paymentIcon}>💵</Text>
             <View style={{ flex: 1 }}>
-              <Text style={[s.paymentLabel, paymentMethod === 'cash' && s.paymentLabelSelected]}>Cash on Service</Text>
-              <Text style={s.paymentHint}>Pay when the cleaner arrives (+5 AED fee)</Text>
+              <Text style={[s.paymentLabel, paymentMethod === 'cash' && s.paymentLabelSelected]}>{t('ui.bookingFlow.cashOnService', 'Cash on Service')}</Text>
+              <Text style={s.paymentHint}>{t('ui.bookingFlow.cashOnServiceDesc', 'Pay when the cleaner arrives (+5 AED fee)')}</Text>
             </View>
             <View style={[s.radio, paymentMethod === 'cash' && s.radioSelected]}>
               {paymentMethod === 'cash' && <View style={s.radioDot} />}
@@ -1729,49 +1728,56 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           <View style={[s.paymentOption, s.paymentOptionDisabled]}>
             <Text style={s.paymentIcon}>🍎</Text>
             <View style={{ flex: 1 }}>
-              <Text style={s.paymentLabelDisabled}>Apple Pay</Text>
-              <Text style={s.paymentHint}>Coming Soon</Text>
+              <Text style={s.paymentLabelDisabled}>{t('ui.bookingFlow.applePay', 'Apple Pay')}</Text>
+              <Text style={s.paymentHint}>{t('ui.comingSoon', 'Coming Soon')}</Text>
             </View>
-            <View style={s.badge2}><Text style={s.badge2Text}>Soon</Text></View>
+            <View style={s.badge2}><Text style={s.badge2Text}>{t('ui.soon', 'Soon')}</Text></View>
           </View>
           {/* Tabby - disabled */}
           <View style={[s.paymentOption, s.paymentOptionDisabled]}>
             <Text style={s.paymentIcon}>💳</Text>
             <View style={{ flex: 1 }}>
-              <Text style={s.paymentLabelDisabled}>Tabby (Buy Now, Pay Later)</Text>
-              <Text style={s.paymentHint}>Coming Soon</Text>
+              <Text style={s.paymentLabelDisabled}>{t('ui.bookingFlow.tabby', 'Tabby (Buy Now, Pay Later)')}</Text>
+              <Text style={s.paymentHint}>{t('ui.comingSoon', 'Coming Soon')}</Text>
             </View>
-            <View style={s.badge2}><Text style={s.badge2Text}>Soon</Text></View>
+            <View style={s.badge2}><Text style={s.badge2Text}>{t('ui.soon', 'Soon')}</Text></View>
           </View>
         </View>
 
         {/* Order summary */}
         <View style={s.summaryBox}>
-          <Text style={s.summaryTitle}>📋 Order Review</Text>
+          <Text style={s.summaryTitle}>{t('ui.bookingFlow.orderReview', '📋 Order Review')}</Text>
           <View style={s.summaryRows}>
-            <SummaryRow label="Service" value={selectedService?.name ?? '—'} />
-            {selectedPropertySize && !isWindowService(selectedService?.id) && (
-              <SummaryRow label="Property Size" value={selectedPropertySize.charAt(0).toUpperCase() + selectedPropertySize.slice(1)} />
+            <SummaryRow
+              label={t('ui.bookingFlow.service', 'Service')}
+              value={selectedService?.name ?? '—'}
+            />
+            {selectedPropertySize && !isWindowCategory(selectedCategory) && (
+              <SummaryRow label={t('ui.bookingFlow.propertySize', 'Property Size')} value={translatePropertySize(t, selectedPropertySize)} />
             )}
-            {requiresPanels(selectedService?.id) && <SummaryRow label="Window Panels" value={`${windowPanels} panels`} />}
-            {selectedCleaners && <SummaryRow label="Cleaners" value={`${selectedCleaners}`} />}
-            {selectedHours && <SummaryRow label="Duration" value={`${selectedHours} hours`} />}
-            <SummaryRow label="Materials" value={ownMaterials ? 'Customer provided' : 'Cleaner provided'} />
-            {serviceDate && serviceTime && <SummaryRow label="Date & Time" value={`${formatDisplayDate(serviceDate)} at ${TIME_LABELS[serviceTime]}`} />}
-            {selectedAddons.length > 0 && <SummaryRow label="Extra Services" value={selectedAddons.map(a => a.name).join(', ')} />}
+            {selectedCleaners && !isWindowCategory(selectedCategory) && <SummaryRow label={t('ui.bookingFlow.cleaners', 'Cleaners')} value={`${selectedCleaners}`} />}
+            {selectedHours && <SummaryRow label={t('ui.bookingFlow.duration', 'Duration')} value={tPlural('ui.bookingFlow.hoursCount', selectedHours, `${selectedHours} hour`)} />}
+            {!isWindowCategory(selectedCategory) && !isDeepPackageService(selectedService?.id) && (
+              <SummaryRow label={t('ui.bookingFlow.materials', 'Materials')} value={ownMaterials ? t('ui.bookingFlow.customerProvided', 'Customer provided') : t('ui.bookingFlow.cleanerProvided', 'Cleaner provided')} />
+            )}
+            {serviceDate && serviceTime && <SummaryRow label={t('ui.bookingFlow.dateTime', 'Date & Time')} value={`${formatDisplayDate(serviceDate)} ${t('ui.at', 'at')} ${formatTimeLabel(serviceTime)}`} />}
+            {selectedAddons.length > 0 && <SummaryRow label={t('ui.bookingFlow.extraServicesLabel', 'Extra Services')} value={selectedAddons.map(a => a.name).join(', ')} />}
           </View>
 
           <View style={s.divider} />
-          <Text style={s.summaryTitle}>💰 Payment Summary</Text>
+          <Text style={s.summaryTitle}>{t('ui.bookingFlow.paymentSummary', '💰 Payment Summary')}</Text>
           <View style={s.summaryRows}>
-            <SummaryRow label="Service Price" value={`${pricing.base} AED`} />
-            {pricing.addonsTotal > 0 && <SummaryRow label="Extra Services" value={`${pricing.addonsTotal} AED`} />}
-            <SummaryRow label="VAT (5%)" value={`${pricing.vat} AED`} />
-            {pricing.cashFee > 0 && <SummaryRow label="Cash Fee" value={`${pricing.cashFee} AED`} />}
+            <SummaryRow label={t('ui.bookingFlow.servicePrice', 'Service Price')} value={`${pricing.base} ${t('ui.aed', 'AED')}`} />
+            {pricing.weekendSurcharge > 0 && (
+              <SummaryRow label={t('ui.bookingFlow.weekendSurcharge', 'Weekend surcharge')} value={`${pricing.weekendSurcharge} ${t('ui.aed', 'AED')}`} />
+            )}
+            {pricing.addonsTotal > 0 && <SummaryRow label={t('ui.bookingFlow.extraServicesLabel', 'Extra Services')} value={`${pricing.addonsTotal} ${t('ui.aed', 'AED')}`} />}
+            <SummaryRow label={t('ui.bookingFlow.vat', 'VAT (5%)')} value={`${pricing.vat} ${t('ui.aed', 'AED')}`} />
+            {pricing.cashFee > 0 && <SummaryRow label={t('ui.bookingFlow.cashFee', 'Cash Fee')} value={`${pricing.cashFee} ${t('ui.aed', 'AED')}`} />}
           </View>
           <View style={s.totalRow}>
-            <Text style={s.totalLabel}>Total</Text>
-            <Text style={s.totalValue}>{pricing.total} AED</Text>
+            <Text style={s.totalLabel}>{t('ui.bookingFlow.total', 'Total')}</Text>
+            <Text style={s.totalValue}>{pricing.total} {t('ui.aed', 'AED')}</Text>
           </View>
         </View>
       </View>
@@ -1787,18 +1793,18 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
             <Text style={s.successEmoji}>✓</Text>
           </LinearGradient>
         </Animated.View>
-        <Text style={s.successTitle}>Booking Confirmed! 🎉</Text>
+        <Text style={s.successTitle}>{t('ui.bookingFlow.bookingSuccess', 'Booking Submitted! 🎉')}</Text>
         <Text style={s.successSubtitle}>
-          Your booking #{bookingId} has been submitted successfully. We'll contact you shortly to confirm the details.
+          {t('ui.bookingFlow.bookingSuccessDesc', "Your booking #{{id}} is pending admin confirmation. We'll contact you shortly.", { values: { id: bookingId ?? '' } })}
         </Text>
         <View style={s.successDetails}>
           {serviceDate && <Text style={s.successDetail}>📅 {formatDisplayDate(serviceDate)}</Text>}
-          {serviceTime && <Text style={s.successDetail}>🕐 {TIME_LABELS[serviceTime]}</Text>}
+          {serviceTime && <Text style={s.successDetail}>🕐 {formatTimeLabel(serviceTime)}</Text>}
           {selectedService && <Text style={s.successDetail}>🧹 {selectedService.name}</Text>}
-          <Text style={s.successDetail}>💰 Total: {pricing.total} AED</Text>
+          <Text style={s.successDetail}>💰 {t('ui.bookingFlow.total', 'Total')}: {pricing.total} {t('ui.aed', 'AED')}</Text>
         </View>
         <ActivityIndicator size="small" color="#10B981" style={{ marginTop: 20 }} />
-        <Text style={s.successRedirect}>Redirecting to your bookings...</Text>
+        <Text style={s.successRedirect}>{t('ui.bookingFlow.redirecting', 'Redirecting to your bookings...')}</Text>
       </View>
     );
   };
@@ -1808,7 +1814,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
     return (
       <View style={[s.root, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={{ color: '#6B7280', marginTop: 12 }}>Loading services...</Text>
+        <Text style={{ color: '#6B7280', marginTop: 12 }}>{t('ui.bookingFlow.loadingServices', 'Loading services...')}</Text>
       </View>
     );
   }
@@ -1829,11 +1835,11 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           <Text style={s.headerBackText}>{currentStep === 1 ? '✕' : '‹'}</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>
-          {currentStep === 1 ? 'Choose Service'
-            : currentStep === 2 ? 'Service Details'
-            : currentStep === 3 ? 'Schedule Your Service'
-            : currentStep === 4 ? 'Your Details'
-            : 'Booking Confirmed'}
+          {currentStep === 1 ? t('ui.bookingFlow.chooseService', 'Choose Service')
+            : currentStep === 2 ? t('ui.bookingFlow.serviceDetails', 'Service Details')
+            : currentStep === 3 ? t('ui.bookingFlow.scheduleService', 'Schedule Your Service')
+            : currentStep === 4 ? t('ui.bookingFlow.yourDetails', 'Your Details')
+            : t('ui.bookingFlow.bookingConfirmed', 'Booking Confirmed')}
         </Text>
         <View style={{ width: 36 }} />
       </View>
@@ -1844,7 +1850,9 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         contentContainerStyle={s.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={currentStep === 4 && useNewAddress}
       >
+        <View ref={scrollContentRef} collapsable={false}>
         {/* Step indicator (steps 1-4 only) */}
         {currentStep < 5 && (
           <View style={s.stepIndicatorWrap}>
@@ -1856,6 +1864,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
         <Animated.View style={{ transform: [{ translateX: slideAnim }], opacity: fadeAnim }}>
           {stepContent[currentStep]}
         </Animated.View>
+        </View>
       </ScrollView>
 
       {/* Footer CTA */}
@@ -1865,11 +1874,11 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
           {pricing.total > 0 && currentStep > 1 && (
             <View style={s.priceBar}>
               {currentStep === 3 ? (
-                <Text style={s.priceBarCyan}>Estimated Total: {pricing.total} AED</Text>
+                <Text style={s.priceBarCyan}>{t('ui.bookingFlow.estimatedTotalValue', 'Estimated Total: {{price}} AED', { values: { price: pricing.total } })}</Text>
               ) : (
                 <>
-                  <Text style={s.priceBarLabel}>Estimated Total</Text>
-                  <Text style={s.priceBarValue}>{pricing.total} AED</Text>
+                  <Text style={s.priceBarLabel}>{t('ui.bookingFlow.estimatedTotal', 'Estimated Total')}</Text>
+                  <Text style={s.priceBarValue}>{pricing.total} {t('ui.aed', 'AED')}</Text>
                 </>
               )}
             </View>
@@ -1890,7 +1899,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ navigation, route }) => {
                 <ActivityIndicator color="#FFF" />
               ) : (
                 <Text style={s.ctaBtnText}>
-                  {currentStep === 4 ? '✓ Confirm Booking' : `Continue →`}
+                  {currentStep === 4 ? t('ui.bookingFlow.confirmBooking', '✓ Confirm Booking') : t('ui.bookingFlow.continue', 'Continue →')}
                 </Text>
               )}
             </LinearGradient>
@@ -1967,14 +1976,34 @@ const s = StyleSheet.create({
   categoryBannerTitle: { fontSize: 15, fontWeight: '700', color: '#93C5FD' },
   categoryBannerSubtitle: { fontSize: 12, fontWeight: '700', color: '#60A5FA', marginTop: 2 },
 
-  serviceRow: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 10 },
-  serviceRowSelected: { borderColor: 'rgba(59,130,246,0.65)', backgroundColor: 'rgba(37,99,235,0.20)' },
-  serviceRowInfo: { flex: 1, gap: 3 },
-  serviceRowName: { fontSize: 14, fontWeight: '700', color: '#F1F5F9' },
-  serviceRowDesc: { fontSize: 12, color: '#94A3B8' },
-  serviceRowPrice: { fontSize: 12, fontWeight: '700', color: '#93C5FD' },
+  serviceRow: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 10, gap: 12 },
+  serviceRowSelected: { borderColor: 'rgba(59,130,246,0.70)', backgroundColor: 'rgba(37,99,235,0.18)' },
+  serviceRowDisabled: { opacity: 0.45 },
+  serviceRowInfo: { flex: 1 },
+  serviceRowName: { fontSize: 14, fontWeight: '700', color: '#F1F5F9', marginBottom: 2 },
+  serviceRowNameDisabled: { color: '#94A3B8' },
+  serviceRowDesc: { fontSize: 12, color: '#94A3B8', marginBottom: 4 },
+  serviceRowPrice: { fontSize: 13, fontWeight: '700', color: '#38BDF8' },
+  specializedHint: { fontSize: 12, color: '#94A3B8', marginBottom: 12, lineHeight: 18 },
+  specializedGroupLabel: { fontSize: 11, fontWeight: '700', color: '#64748B', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8 },
+  windowInfoCard: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(59,130,246,0.35)',
+    backgroundColor: 'rgba(37,99,235,0.12)',
+    marginTop: 8,
+  },
+  windowInfoTitle: { fontSize: 16, fontWeight: '800', color: '#F1F5F9', marginBottom: 6 },
+  windowInfoPrice: { fontSize: 14, fontWeight: '700', color: '#93C5FD', marginBottom: 6 },
+  windowInfoHint: { fontSize: 12, color: '#94A3B8', lineHeight: 18 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  checkboxSelected: { borderColor: '#38BDF8', backgroundColor: 'rgba(56,189,248,0.25)' },
+  checkboxDisabled: { borderColor: 'rgba(255,255,255,0.12)' },
+  checkboxMark: { color: '#38BDF8', fontSize: 13, fontWeight: '800' },
+  radioDisabled: { borderColor: 'rgba(255,255,255,0.12)' },
 
-  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
   radioSelected: { borderColor: '#2563EB', backgroundColor: '#2563EB' },
   radioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFF' },
 
@@ -2097,7 +2126,7 @@ const s = StyleSheet.create({
   addonRight: { alignItems: 'flex-end', gap: 6 },
   addonPrice: { fontSize: 13, fontWeight: '700', color: '#94A3B8' },
   addonPriceActive: { color: '#22D3EE' },
-  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  addonCheckbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
   checkboxActive: { borderColor: '#22D3EE', backgroundColor: '#22D3EE' },
   checkmark: { color: '#070B18', fontSize: 13, fontWeight: '900' },
 

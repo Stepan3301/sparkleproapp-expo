@@ -15,11 +15,10 @@ export interface Profile {
   id: string;
   full_name?: string;
   phone_number?: string;
-  role?: 'customer' | 'admin';
+  role?: 'customer' | 'admin' | 'cleaner';
   member_since?: string;
   avatar_url?: string;
-  created_at: string;
-  updated_at: string;
+  notification_preferences?: Record<string, boolean>;
 }
 
 export interface Addon {
@@ -29,7 +28,7 @@ export interface Addon {
 }
 
 export type PropertySize = 'small' | 'medium' | 'large' | 'villa';
-export type BookingStatus = 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+export type BookingStatus = 'pending' | 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
 
 export interface Booking {
   id: number;
@@ -80,6 +79,8 @@ export interface Booking {
   
   // Status
   status: BookingStatus;
+  team_id?: number | null;
+  assigned_cleaners?: string[];
   
   // Timestamps
   created_at: string;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Switch, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSimpleTranslation } from '../../utils/i18n';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -18,36 +19,48 @@ interface NotifItem {
 }
 
 interface NotifGroup {
-  title: string;
+  id: string;
   items: NotifItem[];
 }
 
-const GROUPS: NotifGroup[] = [
+const GROUP_DEFS: NotifGroup[] = [
   {
-    title: 'BOOKING UPDATES',
+    id: 'booking',
     items: [
-      { id: 'booking_confirmed', icon: 'calendar-outline',     iconBg: '#2563EB', label: 'Booking Confirmed',  sub: 'When your booking is confirmed' },
-      { id: 'booking_reminder',  icon: 'alarm-outline',         iconBg: '#3B82F6', label: 'Booking Reminder',  sub: '1 hour before your booking' },
-      { id: 'cleaner_on_way',    icon: 'location',              iconBg: '#10B981', label: 'Cleaner On The Way', sub: 'When cleaner is heading to you' },
-      { id: 'booking_completed', icon: 'checkmark-circle',      iconBg: '#22C55E', label: 'Booking Completed', sub: 'When job is done' },
-      { id: 'booking_cancelled', icon: 'close-circle',          iconBg: '#EF4444', label: 'Booking Cancelled', sub: 'If booking is cancelled' },
+      { id: 'booking_confirmed', icon: 'calendar-outline',     iconBg: '#2563EB', label: '', sub: '' },
+      { id: 'booking_reminder',  icon: 'alarm-outline',         iconBg: '#3B82F6', label: '', sub: '' },
+      { id: 'cleaner_on_way',    icon: 'location',              iconBg: '#10B981', label: '', sub: '' },
+      { id: 'booking_completed', icon: 'checkmark-circle',      iconBg: '#22C55E', label: '', sub: '' },
+      { id: 'booking_cancelled', icon: 'close-circle',          iconBg: '#EF4444', label: '', sub: '' },
     ],
   },
   {
-    title: 'PROMOTIONS',
+    id: 'promotions',
     items: [
-      { id: 'special_offers', icon: 'pricetag-outline',    iconBg: '#F59E0B', label: 'Special Offers', sub: 'Discounts and deals' },
-      { id: 'new_services',   icon: 'star-outline',         iconBg: '#8B5CF6', label: 'New Services',  sub: 'New service announcements' },
+      { id: 'special_offers', icon: 'pricetag-outline',    iconBg: '#F59E0B', label: '', sub: '' },
+      { id: 'new_services',   icon: 'star-outline',         iconBg: '#8B5CF6', label: '', sub: '' },
     ],
   },
   {
-    title: 'GENERAL',
+    id: 'general',
     items: [
-      { id: 'app_updates',     icon: 'information-circle', iconBg: '#0891B2', label: 'App Updates',    sub: 'Feature updates and improvements' },
-      { id: 'account_alerts',  icon: 'notifications',       iconBg: '#7C3AED', label: 'Account Alerts', sub: 'Security and account changes' },
+      { id: 'app_updates',     icon: 'information-circle', iconBg: '#0891B2', label: '', sub: '' },
+      { id: 'account_alerts',  icon: 'notifications',       iconBg: '#7C3AED', label: '', sub: '' },
     ],
   },
 ];
+
+const ITEM_KEY_MAP: Record<string, string> = {
+  booking_confirmed: 'bookingConfirmed',
+  booking_reminder: 'bookingReminder',
+  cleaner_on_way: 'cleanerOnWay',
+  booking_completed: 'bookingCompleted',
+  booking_cancelled: 'bookingCancelled',
+  special_offers: 'specialOffers',
+  new_services: 'newServices',
+  app_updates: 'appUpdates',
+  account_alerts: 'accountAlerts',
+};
 
 const STORAGE_KEY = 'notif_prefs';
 
@@ -65,8 +78,23 @@ const DEFAULTS: Record<string, boolean> = {
 
 const NotificationsScreen = ({ navigation }: { navigation: any }) => {
   const insets = useSafeAreaInsets();
+  const { t } = useSimpleTranslation();
   const [prefs, setPrefs]     = useState<Record<string, boolean>>(DEFAULTS);
   const [loading, setLoading] = useState(true);
+
+  const groups = useMemo(() =>
+    GROUP_DEFS.map(group => ({
+      title: t(`ui.notificationsPage.groups.${group.id}`),
+      items: group.items.map(item => {
+        const itemKey = ITEM_KEY_MAP[item.id];
+        return {
+          ...item,
+          label: t(`ui.notificationsPage.items.${itemKey}.label`),
+          sub: t(`ui.notificationsPage.items.${itemKey}.sub`),
+        };
+      }),
+    })),
+  [t]);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then(raw => {
@@ -92,7 +120,7 @@ const NotificationsScreen = ({ navigation }: { navigation: any }) => {
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.75}>
           <Ionicons name="chevron-back" size={22} color="#F1F5F9" />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Notifications</Text>
+        <Text style={s.headerTitle}>{t('profile.notifications')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -100,9 +128,9 @@ const NotificationsScreen = ({ navigation }: { navigation: any }) => {
         <ActivityIndicator color="#22D3EE" style={{ marginTop: 60 }} />
       ) : (
         <ScrollView contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false}>
-          <Text style={s.subtitle}>Choose which notifications you want to receive</Text>
+          <Text style={s.subtitle}>{t('ui.notificationsPage.subtitle')}</Text>
 
-          {GROUPS.map(group => (
+          {groups.map(group => (
             <View key={group.title} style={s.group}>
               <Text style={s.groupLabel}>{group.title}</Text>
               <View style={s.card}>

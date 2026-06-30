@@ -11,6 +11,7 @@ import AdminChatScreen           from '../screens/admin/AdminChatScreen';
 import AdminSettingsScreen       from '../screens/admin/AdminSettingsScreen';
 
 import { AdminTabParamList } from './types';
+import { useSimpleTranslation } from '../utils/i18n';
 
 const Tab = createBottomTabNavigator<AdminTabParamList>();
 
@@ -23,18 +24,21 @@ interface AdminTab {
   name: keyof AdminTabParamList;
   iconActive:   IoniconName;
   iconInactive: IoniconName;
-  label: string;
+  labelKey: string;
+  labelFallback: string;
 }
 
 const TABS: AdminTab[] = [
-  { name: 'AdminDashboard', iconActive: 'grid',          iconInactive: 'grid-outline',          label: 'Dashboard' },
-  { name: 'AdminOrders',    iconActive: 'reader',         iconInactive: 'reader-outline',         label: 'Orders'    },
-  { name: 'AdminTeam',      iconActive: 'people',         iconInactive: 'people-outline',         label: 'Team'      },
-  { name: 'AdminChat',      iconActive: 'chatbubbles',    iconInactive: 'chatbubbles-outline',    label: 'Chat'      },
-  { name: 'AdminSettings',  iconActive: 'settings',       iconInactive: 'settings-outline',       label: 'Settings'  },
+  { name: 'AdminDashboard', iconActive: 'grid',          iconInactive: 'grid-outline',          labelKey: 'ui.admin.tabs.dashboard', labelFallback: 'Dashboard' },
+  { name: 'AdminOrders',    iconActive: 'reader',         iconInactive: 'reader-outline',         labelKey: 'ui.admin.tabs.orders',    labelFallback: 'Orders'    },
+  { name: 'AdminTeam',      iconActive: 'people',         iconInactive: 'people-outline',         labelKey: 'ui.admin.tabs.team',      labelFallback: 'Team'      },
+  { name: 'AdminChat',      iconActive: 'chatbubbles',    iconInactive: 'chatbubbles-outline',    labelKey: 'ui.admin.tabs.chat',      labelFallback: 'Chat'      },
+  { name: 'AdminSettings',  iconActive: 'settings',       iconInactive: 'settings-outline',       labelKey: 'ui.admin.tabs.settings',  labelFallback: 'Settings'  },
 ];
 
 const AdminTabBar = ({ state, navigation }: any) => {
+  const { t } = useSimpleTranslation();
+
   return (
     <View style={s.barWrapper}>
       {Platform.OS === 'ios' ? (
@@ -43,7 +47,7 @@ const AdminTabBar = ({ state, navigation }: any) => {
       <View style={[s.bar, Platform.OS === 'android' && s.barAndroid]}>
         <View style={s.topBorder} />
         <View style={s.inner}>
-          {TABS.map((tab, index) => {
+          {TABS.map((tab) => {
             const isActive = state.routes[state.index]?.name === tab.name;
             return (
               <View key={tab.name} style={s.tabWrap}>
@@ -54,7 +58,9 @@ const AdminTabBar = ({ state, navigation }: any) => {
                   color={isActive ? ACTIVE_COLOR : INACTIVE_COLOR}
                   onPress={() => navigation.navigate(tab.name)}
                 />
-                <Text style={[s.label, isActive && s.labelActive]}>{tab.label}</Text>
+                <Text style={[s.label, isActive && s.labelActive]}>
+                  {t(tab.labelKey, tab.labelFallback)}
+                </Text>
                 {isActive && <View style={s.dot} />}
               </View>
             );

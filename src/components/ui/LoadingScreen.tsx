@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSimpleTranslation } from '../../utils/i18n';
 
 interface LoadingScreenProps {
   isLoading: boolean;
@@ -15,10 +16,9 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
   minDuration = 800,
   smartLoading = false,
 }) => {
+  const { t } = useSimpleTranslation();
   const [showLoader, setShowLoader] = useState(isLoading);
   const [fadeOut, setFadeOut] = useState(false);
-
-  // Use a ref for startTime to avoid re-render cascades.
   const startTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -51,8 +51,6 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
         return () => clearTimeout(timer);
       }
     }
-  // startTimeRef is a ref, intentionally excluded.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, minDuration, smartLoading]);
 
   if (!showLoader) return null;
@@ -64,7 +62,8 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
         style={StyleSheet.absoluteFill}
       />
       <ActivityIndicator size="large" color="#22D3EE" />
-      <Text style={styles.brandText}>SparkleProApp</Text>
+      <Text style={styles.brandText}>{t('app.name', 'SparklePro')}</Text>
+      <Text style={styles.loadingText}>{t('navigation.loading', 'Loading...')}</Text>
     </View>
   );
 };
@@ -79,7 +78,7 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
+    gap: 8,
   },
   brandText: {
     color: '#22D3EE',
@@ -87,6 +86,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.2,
     marginTop: 4,
+  },
+  loadingText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 13,
+    fontWeight: '500',
   },
 });
 

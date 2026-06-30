@@ -11,18 +11,20 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { RootStackParamList } from '../../navigation/types';
+import { useSimpleTranslation } from '../../utils/i18n';
+import { translateBookingStatus } from '../../utils/translateStatus';
 
 type Nav   = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AdminChatConversation'>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const STATUS_CFG: Record<string, { label: string; color: string; bg: string }> = {
-  pending:     { label: 'Pending',     color: '#F59E0B', bg: 'rgba(245,158,11,0.15)'  },
-  confirmed:   { label: 'Confirmed',   color: '#38BDF8', bg: 'rgba(56,189,248,0.15)'  },
-  in_progress: { label: 'In Progress', color: '#10B981', bg: 'rgba(16,185,129,0.15)'  },
-  completed:   { label: 'Completed',   color: '#22C55E', bg: 'rgba(34,197,94,0.15)'   },
-  cancelled:   { label: 'Cancelled',   color: '#EF4444', bg: 'rgba(239,68,68,0.15)'   },
+const STATUS_CFG: Record<string, { color: string; bg: string }> = {
+  pending:     { color: '#F59E0B', bg: 'rgba(245,158,11,0.15)'  },
+  confirmed:   { color: '#38BDF8', bg: 'rgba(56,189,248,0.15)'  },
+  in_progress: { color: '#10B981', bg: 'rgba(16,185,129,0.15)'  },
+  completed:   { color: '#22C55E', bg: 'rgba(34,197,94,0.15)'   },
+  cancelled:   { color: '#EF4444', bg: 'rgba(239,68,68,0.15)'   },
 };
 
 const formatTime = (iso: string): string => {
@@ -42,11 +44,11 @@ const formatServiceTime = (t: string | null | undefined): string => {
   return `${dh}:${String(m).padStart(2, '0')} ${period}`;
 };
 
-const formatDate = (d: string | null | undefined): string => {
+const formatDate = (d: string | null | undefined, t: (key: string, fallback?: string) => string): string => {
   if (!d) return '';
   const date      = new Date(d + 'T00:00:00');
   const todayStr  = new Date().toISOString().split('T')[0];
-  if (d === todayStr) return 'Today';
+  if (d === todayStr) return t('ui.today', 'Today');
   const days   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${days[date.getDay()]} ${date.getDate()} ${months[date.getMonth()]}`;
@@ -86,13 +88,16 @@ const AdminChatConversationScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const route      = useRoute<Route>();
   const { user } = useAuth();
+  const { t } = useSimpleTranslation();
 
   const {
     bookingId, customerId, customerName,
-    serviceName = 'Cleaning Service',
+    serviceName: routeServiceName,
     serviceDate, serviceTime,
     orderStatus = 'pending',
   } = route.params;
+
+  const serviceName = routeServiceName ?? t('ui.cleaningService', 'Cleaning Service');
 
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -154,7 +159,7 @@ const AdminChatConversationScreen: React.FC = () => {
     });
 
     if (error) {
-      Alert.alert('Error', 'Could not send message. Please try again.');
+      Alert.alert(t('common.error', 'Error'), t('ui.admin.sendFailed', 'Could not send message. Please try again.'));
       setText(content);
     }
     setSending(false);
@@ -185,7 +190,9 @@ const AdminChatConversationScreen: React.FC = () => {
         {/* Name + order */}
         <View style={s.headerInfo}>
           <Text style={s.headerName}>{customerName}</Text>
-          <Text style={s.headerOrder}>Order #{bookingId}</Text>
+          <Text style={s.headerOrder}>
+            {t('ui.admin.orderNumber', 'Order #{{id}}', { values: { id: bookingId } })}
+          </Text>
         </View>
 
         {/* Actions */}
@@ -203,14 +210,16 @@ const AdminChatConversationScreen: React.FC = () => {
       <View style={s.orderPill}>
         <Text style={s.orderPillService}>{serviceName}</Text>
         {serviceDate && <Text style={s.orderPillDot}>·</Text>}
-        {serviceDate && <Text style={s.orderPillDate}>{formatDate(serviceDate)} {formatServiceTime(serviceTime)}</Text>}
+        {serviceDate && <Text style={s.orderPillDate}>{formatDate(serviceDate, t)} {formatServiceTime(serviceTime)}</Text>}
         <Text style={s.orderPillDot}>·</Text>
         <View style={[s.orderPillStatus, { backgroundColor: cfg.bg }]}>
           <View style={[s.statusDot, { backgroundColor: cfg.color }]} />
-          <Text style={[s.orderPillStatusText, { color: cfg.color }]}>{cfg.label}</Text>
+          <Text style={[s.orderPillStatusText, { color: cfg.color }]}>
+            {translateBookingStatus(t, orderStatus)}
+          </Text>
         </View>
         <TouchableOpacity onPress={() => navigation.navigate('AdminOrderDetail', { bookingId })}>
-          <Text style={s.viewOrder}>View Order</Text>
+          <Text style={s.viewOrder}>{t('ui.viewOrder', 'View Order')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -235,7 +244,13 @@ const AdminChatConversationScreen: React.FC = () => {
 
             return (
               <>
-                {showStatusEvent && <StatusEvent text={`Order status updated · ${formatTime(item.created_at)}`} />}
+                {showStatusEvent && (
+                  <StatusEvent
+                    text={t('ui.admin.orderStatusUpdated', 'Order status updated · {{time}}', {
+                      values: { time: formatTime(item.created_at) },
+                    })}
+                  />
+                )}
                 <MessageBubble msg={item} isAdmin={isAdmin} />
               </>
             );
@@ -246,8 +261,8 @@ const AdminChatConversationScreen: React.FC = () => {
           ListEmptyComponent={
             <View style={s.emptyWrap}>
               <Ionicons name="chatbubble-outline" size={36} color="#38BDF8" />
-              <Text style={s.emptyText}>No messages yet</Text>
-              <Text style={s.emptySubtext}>Send a message to start the conversation</Text>
+              <Text style={s.emptyText}>{t('ui.admin.noMessages', 'No messages yet')}</Text>
+              <Text style={s.emptySubtext}>{t('ui.admin.startConversation', 'Send a message to start the conversation')}</Text>
             </View>
           }
         />
@@ -260,7 +275,7 @@ const AdminChatConversationScreen: React.FC = () => {
         </TouchableOpacity>
         <TextInput
           style={s.input}
-          placeholder="Type a message..."
+          placeholder={t('ui.admin.typeMessage', 'Type a message...')}
           placeholderTextColor="#5A6A7A"
           value={text}
           onChangeText={setText}

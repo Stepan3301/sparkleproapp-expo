@@ -24,6 +24,7 @@ export type RootStackParamList = {
   // ── Admin navigation ──────────────────────────────────────────────────────
   AdminTabs: undefined;
   AdminOrderDetail: { bookingId: number };
+  AdminTeamMember: { cleanerId: string };
   AdminChatConversation: {
     bookingId:   number;
     customerId:  string;
@@ -33,6 +34,9 @@ export type RootStackParamList = {
     serviceTime?:  string;
     orderStatus?:  string;
   };
+  // ── Cleaner navigation ────────────────────────────────────────────────────
+  CleanerTabs: undefined;
+  CleanerOrderDetail: { bookingId: number };
 };
 
 // Tab-level routes (customer main app tabs)
@@ -50,4 +54,10 @@ export type AdminTabParamList = {
   AdminTeam:      undefined;
   AdminChat:      undefined;
   AdminSettings:  undefined;
+};
+
+// Tab-level routes (cleaner app tabs)
+export type CleanerTabParamList = {
+  CleanerJobs:    undefined;
+  CleanerProfile: undefined;
 };

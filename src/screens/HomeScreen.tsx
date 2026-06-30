@@ -20,69 +20,107 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
+import { enUS, ru } from 'date-fns/locale';
 import { useAuth } from '../contexts/AuthContext';
+import { useGoToAuth } from '../hooks/useGoToAuth';
 import { supabase } from '../lib/supabase';
 import { useSimpleTranslation } from '../utils/i18n';
+import { translateBookingStatus, getPackageCopy } from '../utils/translateStatus';
 import HomeHeader from '../components/ui/HomeHeader';
 import Toast from '../components/ui/Toast';
 import LoadingScreen from '../components/ui/LoadingScreen';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
+const PKG_CARD_W = 200;
+const PKG_GAP = 14;
+const PKG_STEP = PKG_CARD_W + PKG_GAP;
+
 // ─── Package service metadata (banners, descriptions, inclusions) ─────────────
 const PKG_ASSETS: Record<number, {
-  icon: any; banner: any; richDescription: string;
-  inclusions: string[]; hoursMin: number; hoursMax: number;
+  icon: any; banner: any;
+  hoursMin: number; hoursMax: number;
   cleaners: number; isPopular?: boolean;
 }> = {
   10: {
-    icon: require('../../assets/icon_full_villa_deep_cleaning.png'),
-    banner: require('../../assets/banner_full_villa.jpg'),
-    richDescription: 'A comprehensive deep clean for your entire villa, ensuring every corner is spotless and sanitized. Perfect for moving in/out or a thorough seasonal refresh.',
-    inclusions: ['All rooms vacuumed and mopped','Kitchen surfaces deep cleaned','Bathrooms fully sanitized','Windows wiped inside','Furniture dusted and polished','Skirting boards and light switches'],
+    icon: require('../../assets/icon_full_villa_deep_cleaning.webp'),
+    banner: require('../../assets/banner_full_villa.webp'),
     hoursMin: 4, hoursMax: 6, cleaners: 2, isPopular: true,
   },
   11: {
-    icon: require('../../assets/icon_full_apartment.png'),
-    banner: require('../../assets/banner_full_apartment.jpg'),
-    richDescription: 'Thorough deep cleaning for apartments of all sizes, focusing on detail and hygiene in every room.',
-    inclusions: ['All rooms vacuumed and mopped','Kitchen appliances & surfaces','Bathrooms sanitized','Windows wiped inside','Furniture dusted','Balcony swept and mopped'],
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
     hoursMin: 2, hoursMax: 4, cleaners: 1,
   },
   12: {
-    icon: require('../../assets/icon_villa_facade.png'),
-    banner: require('../../assets/banner_villa_facade.jpg'),
-    richDescription: 'Professional exterior façade cleaning to restore the pristine look of your villa.',
-    inclusions: ['Exterior walls pressure washed','Ground-floor windows exterior','Entrance area deep cleaned','Driveway and pathway swept','Garden fixtures wiped'],
+    icon: require('../../assets/icon_villa_facade.webp'),
+    banner: require('../../assets/banner_villa_facade.webp'),
     hoursMin: 3, hoursMax: 5, cleaners: 2,
   },
   13: {
-    icon: require('../../assets/icon_move_in_out.png'),
-    banner: require('../../assets/banner_move_in_out.jpg'),
-    richDescription: 'Specialized cleaning for moving in or out, ensuring a completely fresh start. Every surface is treated so the next chapter begins spotlessly.',
-    inclusions: ['Complete property sanitization','Deep clean all rooms','Kitchen & appliances inside-out','Bathrooms deep cleaned','Walls spot-cleaned','Wardrobes and cabinets inside'],
+    icon: require('../../assets/icon_move_in_out.webp'),
+    banner: require('../../assets/banner_move_in_out.webp'),
     hoursMin: 4, hoursMax: 8, cleaners: 2,
   },
   14: {
-    icon: require('../../assets/icon_post_construction_final.png'),
-    banner: require('../../assets/banner_post_construction.jpg'),
-    richDescription: 'Intensive cleaning to remove dust, debris, and residue after renovation or construction work.',
-    inclusions: ['Construction dust fully removed','Floors deep cleaned & polished','Walls and surfaces wiped','Windows inside and out','Fixtures and fittings cleaned','Debris disposal arranged'],
+    icon: require('../../assets/icon_post_construction_final.webp'),
+    banner: require('../../assets/banner_post_construction.webp'),
     hoursMin: 5, hoursMax: 8, cleaners: 2,
   },
   15: {
-    icon: require('../../assets/icon_kitchen_cleaning.png'),
-    banner: require('../../assets/banner_kitchen.jpg'),
-    richDescription: 'Focused deep cleaning of the entire kitchen area, including all appliances, cabinets, and surfaces.',
-    inclusions: ['Oven & stovetop deep cleaned','Refrigerator inside & outside','Cabinets degreased inside-out','Countertops sanitized','Sink and fixtures scrubbed','Floor deep mopped'],
+    icon: require('../../assets/icon_kitchen_cleaning.webp'),
+    banner: require('../../assets/banner_kitchen.webp'),
     hoursMin: 2, hoursMax: 3, cleaners: 1,
   },
   16: {
-    icon: require('../../assets/icon_bathroom_deep_cleaning.png'),
-    banner: require('../../assets/banner_bathroom.jpg'),
-    richDescription: 'Complete deep cleaning of bathrooms including tiles, grout, fixtures, and all surfaces.',
-    inclusions: ['Tiles scrubbed and sanitized','Grout deep cleaned','Shower/bath descaled','Toilet fully sanitized','Mirror and fixtures polished','Floor deep mopped'],
+    icon: require('../../assets/icon_bathroom_deep_cleaning.webp'),
+    banner: require('../../assets/banner_bathroom.webp'),
     hoursMin: 1, hoursMax: 2, cleaners: 1,
+  },
+  20: {
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
+    hoursMin: 2, hoursMax: 4, cleaners: 2,
+  },
+  21: {
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
+    hoursMin: 2, hoursMax: 4, cleaners: 2,
+  },
+  22: {
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
+    hoursMin: 3, hoursMax: 5, cleaners: 2, isPopular: true,
+  },
+  23: {
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
+    hoursMin: 4, hoursMax: 6, cleaners: 2,
+  },
+  24: {
+    icon: require('../../assets/icon_full_apartment.webp'),
+    banner: require('../../assets/banner_full_apartment.webp'),
+    hoursMin: 4, hoursMax: 6, cleaners: 3,
+  },
+  25: {
+    icon: require('../../assets/icon_full_villa_deep_cleaning.webp'),
+    banner: require('../../assets/banner_full_villa.webp'),
+    hoursMin: 4, hoursMax: 6, cleaners: 2,
+  },
+  26: {
+    icon: require('../../assets/icon_full_villa_deep_cleaning.webp'),
+    banner: require('../../assets/banner_full_villa.webp'),
+    hoursMin: 5, hoursMax: 7, cleaners: 2,
+  },
+  27: {
+    icon: require('../../assets/icon_full_villa_deep_cleaning.webp'),
+    banner: require('../../assets/banner_full_villa.webp'),
+    hoursMin: 6, hoursMax: 8, cleaners: 3,
+  },
+  30: {
+    icon: require('../../assets/icon_post_construction_final.webp'),
+    banner: require('../../assets/banner_post_construction.webp'),
+    hoursMin: 4, hoursMax: 8, cleaners: 2,
   },
 };
 
@@ -148,7 +186,8 @@ const glassStyles = StyleSheet.create({
 // ─── Main Component ───────────────────────────────────────────────────────────
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const { user, isGuest } = useAuth();
-  const { t } = useSimpleTranslation();
+  const goToAuth = useGoToAuth();
+  const { t, tPlural, i18n } = useSimpleTranslation();
   const insets = useSafeAreaInsets();
 
   const [userStats, setUserStats] = useState<UserStats>({
@@ -187,6 +226,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('success');
   const [isToastVisible, setIsToastVisible] = useState(false);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const carouselRef = useRef<FlatList<ServiceData>>(null);
 
   // ── Stable user id (string) avoids re-running effects when Supabase
   //    fires TOKEN_REFRESHED and creates a new User object reference for
@@ -229,7 +270,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       const { data: bookings } = await supabase.from('bookings').select(`id, service_date, service_time, status, total_price, property_size, services (name, image_url)`).eq('customer_id', userId).in('status', ['confirmed', 'in_progress']).gte('service_date', now.split('T')[0]).order('service_date', { ascending: true }).limit(3);
       const transformed = (bookings || []).map((b: any) => ({
         ...b,
-        service_name: b.services?.[0]?.name || 'Cleaning Service',
+        service_name: b.services?.[0]?.name || t('ui.cleaningService', 'Cleaning Service'),
         service_image_url: b.services?.[0]?.image_url || '',
       }));
       setActiveBookings(transformed);
@@ -256,7 +297,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   }, [userId, isGuest, fetchUserStats, fetchLocalProfile, fetchActiveBookings, fetchServices]);
 
   // Run once when auth identity (userId/isGuest) actually changes
-  useEffect(() => { loadAllData(); }, [loadAllData]);
+  useEffect(() => {
+    loadAllData();
+    const safetyTimer = setTimeout(() => setInitialLoading(false), 10000);
+    return () => clearTimeout(safetyTimer);
+  }, [loadAllData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -268,8 +313,23 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   // Services with package metadata (IDs 10-16)
   const packageServices = services.filter(s => PKG_ASSETS[s.id]);
 
+  const scrollCarouselTo = useCallback((index: number) => {
+    if (packageServices.length === 0) return;
+    const clamped = Math.max(0, Math.min(index, packageServices.length - 1));
+    carouselRef.current?.scrollToOffset({ offset: clamped * PKG_STEP, animated: true });
+    setCarouselIndex(clamped);
+  }, [packageServices.length]);
+
+  const handleCarouselScroll = useCallback((e: { nativeEvent: { contentOffset: { x: number } } }) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / PKG_STEP);
+    const clamped = Math.max(0, Math.min(idx, Math.max(packageServices.length - 1, 0)));
+    setCarouselIndex(prev => (prev === clamped ? prev : clamped));
+  }, [packageServices.length]);
+
   const formatDate = (d: string) => {
-    try { return format(new Date(d), 'EEE, MMM d'); } catch { return d; }
+    try {
+      return format(new Date(d), 'EEE, MMM d', { locale: i18n.language === 'ru' ? ru : enUS });
+    } catch { return d; }
   };
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -301,9 +361,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   const handleProfileClick = () => {
     if (isGuest) {
-      Alert.alert('Sign Up Required', 'Sign up to access your profile', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign Up', onPress: () => navigation.getParent()?.navigate('Auth') },
+      Alert.alert(t('ui.signUpRequired', 'Sign Up Required'), t('ui.home.signUpForProfile', 'Sign up to access your profile'), [
+        { text: t('navigation.cancel', 'Cancel'), style: 'cancel' },
+        { text: t('ui.signUp', 'Sign Up'), onPress: goToAuth },
       ]);
     } else {
       navigation.navigate('Profile');
@@ -311,12 +371,15 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   };
 
   const handleInviteFriend = async () => {
-    const userName = profile?.full_name || user?.email?.split('@')[0] || 'A friend';
+    const userName = profile?.full_name || user?.email?.split('@')[0] || t('ui.user', 'User');
     const shareUrl = `https://sparklepro.ae?ref=${user?.id || 'guest'}`;
     try {
-      await Share.share({ message: `${userName} invited you to SparklePro! ${shareUrl}`, title: 'Invite to SparklePro' });
+      await Share.share({
+        message: t('ui.home.inviteShareMessage', `${userName} invited you to SparklePro! ${shareUrl}`, { values: { name: userName, url: shareUrl } }),
+        title: t('ui.home.inviteShareTitle', `Invite to ${t('app.name', 'SparklePro')}`),
+      });
     } catch (e: any) {
-      showToast('Failed to share. Please try again.', 'error');
+      showToast(t('ui.home.shareFailed', 'Failed to share. Please try again.'), 'error');
     }
   };
 
@@ -379,8 +442,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
               {/* Text */}
               <View style={styles.qbText}>
-                <Text style={styles.qbTitle}>Quick Book</Text>
-                <Text style={styles.qbSubtitle}>Get instant cleaning in 2 taps</Text>
+                <Text style={styles.qbTitle}>{t('home.quickBook', 'Quick Book')}</Text>
+                <Text style={styles.qbSubtitle}>{t('home.quickBookSubtitle', 'Get instant cleaning in 2 taps')}</Text>
               </View>
 
               <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.7)" />
@@ -393,7 +456,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           {/* ── Active Booking ──────────────────────────────────────── */}
           {!loading && activeBookings.length > 0 && user && (
             <View style={styles.section}>
-              <SectionTitle icon="refresh-circle" label="Your Next Cleaning" />
+              <SectionTitle icon="refresh-circle" label={t('ui.home.yourNextCleaning', 'Your Next Cleaning')} />
               <TouchableOpacity
                 style={styles.activeBookingCard}
                 onPress={() => navigation.navigate('History')}
@@ -414,16 +477,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                   <View style={styles.abDateRow}>
                     <Ionicons name="calendar-outline" size={13} color="rgba(255,255,255,0.6)" />
                     <Text style={styles.abDate}>
-                      {formatDate(activeBookings[0].service_date)} at {activeBookings[0].service_time || '09:00'}
+                      {formatDate(activeBookings[0].service_date)} {t('ui.at', 'at')} {activeBookings[0].service_time || '09:00'}
                     </Text>
                   </View>
                   <View style={styles.abFooter}>
                     <View style={[styles.statusBadge, activeBookings[0].status === 'confirmed' ? styles.statusConfirmed : styles.statusInProgress]}>
                       <Text style={styles.statusText}>
-                        {activeBookings[0].status === 'confirmed' ? 'Confirmed' : 'In Progress'}
+                        {translateBookingStatus(t, activeBookings[0].status)}
                       </Text>
                     </View>
-                    <Text style={styles.abPrice}>{activeBookings[0].total_price} AED</Text>
+                    <Text style={styles.abPrice}>{activeBookings[0].total_price} {t('ui.aed', 'AED')}</Text>
                   </View>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.4)" />
@@ -433,52 +496,95 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
           {/* ── Services Carousel ────────────────────────────────────── */}
           <View style={styles.section}>
-            <SectionTitle icon="sparkles" label="Our Services" />
+            <SectionTitle icon="sparkles" label={t('ui.home.ourServices', 'Our Services')} />
             {loading ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -18 }}
                 contentContainerStyle={{ paddingHorizontal: 18, gap: 14 }}>
                 {[0, 1, 2].map(i => <View key={i} style={styles.pkgSkeleton} />)}
               </ScrollView>
             ) : (
-              <FlatList
-                data={packageServices}
-                horizontal
-                keyExtractor={item => String(item.id)}
-                showsHorizontalScrollIndicator={false}
-                style={{ marginHorizontal: -18 }}
-                contentContainerStyle={{ paddingHorizontal: 18, gap: 14 }}
-                renderItem={({ item }) => {
-                  const meta = PKG_ASSETS[item.id];
-                  if (!meta) return null;
-                  return (
+              <View>
+                <View style={styles.carouselWrap}>
+                  {carouselIndex > 0 && (
                     <TouchableOpacity
-                      style={styles.pkgCard}
-                      onPress={() => openSheet(item)}
+                      style={[styles.carouselArrow, styles.carouselArrowLeft]}
+                      onPress={() => scrollCarouselTo(carouselIndex - 1)}
                       activeOpacity={0.85}
                     >
-                      <Image source={meta.banner} style={styles.pkgBanner} resizeMode="cover" />
-                      {/* Dark overlay gradient */}
-                      <LinearGradient
-                        colors={['transparent', 'rgba(5,14,31,0.85)']}
-                        style={styles.pkgOverlay}
-                      />
-                      {/* Popular badge */}
-                      {meta.isPopular && (
-                        <View style={styles.pkgPopularBadge}>
-                          <Text style={styles.pkgPopularText}>⭐ Popular</Text>
-                        </View>
-                      )}
-                      {/* Bottom info */}
-                      <View style={styles.pkgInfo}>
-                        <Text style={styles.pkgName} numberOfLines={2}>{item.name}</Text>
-                        <Text style={styles.pkgPrice}>
-                          {Math.round(Number(item.base_price))} AED
-                        </Text>
-                      </View>
+                      <Ionicons name="chevron-back" size={20} color="#FFFFFF" />
                     </TouchableOpacity>
-                  );
-                }}
-              />
+                  )}
+                  {carouselIndex < packageServices.length - 1 && (
+                    <TouchableOpacity
+                      style={[styles.carouselArrow, styles.carouselArrowRight]}
+                      onPress={() => scrollCarouselTo(carouselIndex + 1)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  )}
+                  <FlatList
+                    ref={carouselRef}
+                    data={packageServices}
+                    horizontal
+                    keyExtractor={item => String(item.id)}
+                    showsHorizontalScrollIndicator={false}
+                    style={{ marginHorizontal: -18 }}
+                    contentContainerStyle={{ paddingHorizontal: 18, gap: PKG_GAP }}
+                    snapToInterval={PKG_STEP}
+                    decelerationRate="fast"
+                    onScroll={handleCarouselScroll}
+                    scrollEventThrottle={16}
+                    getItemLayout={(_, index) => ({
+                      length: PKG_STEP,
+                      offset: PKG_STEP * index,
+                      index,
+                    })}
+                    renderItem={({ item }) => {
+                      const meta = PKG_ASSETS[item.id];
+                      if (!meta) return null;
+                      return (
+                        <TouchableOpacity
+                          style={styles.pkgCard}
+                          onPress={() => openSheet(item)}
+                          activeOpacity={0.85}
+                        >
+                          <Image source={meta.banner} style={styles.pkgBanner} resizeMode="cover" />
+                          <LinearGradient
+                            colors={['transparent', 'rgba(5,14,31,0.85)']}
+                            style={styles.pkgOverlay}
+                          />
+                          {meta.isPopular && (
+                            <View style={styles.pkgPopularBadge}>
+                              <Text style={styles.pkgPopularText}>{t('ui.home.popularBadge', '⭐ Popular')}</Text>
+                            </View>
+                          )}
+                          <View style={styles.pkgInfo}>
+                            <Text style={styles.pkgName} numberOfLines={2}>{item.name}</Text>
+                            <Text style={styles.pkgPrice}>
+                              {Math.round(Number(item.base_price))} {t('ui.aed', 'AED')}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    }}
+                  />
+                </View>
+                {packageServices.length > 1 && (
+                  <View style={styles.carouselDots}>
+                    {packageServices.map((svc, idx) => (
+                      <TouchableOpacity
+                        key={svc.id}
+                        onPress={() => scrollCarouselTo(idx)}
+                        activeOpacity={0.8}
+                        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                      >
+                        <View style={[styles.carouselDot, idx === carouselIndex && styles.carouselDotActive]} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
             )}
           </View>
 
@@ -496,11 +602,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                   <Text style={styles.offerEmoji}>🎁</Text>
                 </View>
                 <View style={styles.offerTextBlock}>
-                  <Text style={styles.offerTitle}>Special Offer!</Text>
+                  <Text style={styles.offerTitle}>{t('ui.home.specialOffer', 'Special Offer!')}</Text>
                   <Text style={styles.offerDesc}>
                     {userStats.totalBookings === 0
-                      ? 'Get 15% off your first cleaning. Use code FIRST15'
-                      : 'Invite a friend and get 10% off your next booking!'}
+                      ? t('ui.home.firstOrderOffer', 'Get 15% off your first cleaning. Use code FIRST15')
+                      : t('ui.home.inviteOffer', 'Invite a friend and get 10% off your next booking!')}
                   </Text>
                 </View>
               </View>
@@ -510,7 +616,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                 activeOpacity={0.85}
               >
                 <Text style={styles.offerBtnText}>
-                  {userStats.totalBookings === 0 ? 'Book Now' : 'Invite Friend'}
+                  {userStats.totalBookings === 0 ? t('common.bookNow', 'Book Now') : t('ui.home.inviteFriend', 'Invite Friend')}
                 </Text>
               </TouchableOpacity>
             </LinearGradient>
@@ -518,11 +624,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
           {/* ── Stats row ────────────────────────────────────────────── */}
           <GlassCard style={styles.statsCard}>
-            <StatItem value={`${userStats.totalBookings}`} label="Bookings" icon="checkmark-circle-outline" color="#00D4FF" />
+            <StatItem value={`${userStats.totalBookings}`} label={t('ui.home.bookingsStat', 'Bookings')} icon="checkmark-circle-outline" color="#00D4FF" />
             <View style={styles.statDivider} />
-            <StatItem value={`${userStats.averageRating}★`} label="Our Rating" icon="star-outline" color="#F59E0B" />
+            <StatItem value={`${userStats.averageRating}★`} label={t('ui.home.ourRating', 'Our Rating')} icon="star-outline" color="#F59E0B" />
             <View style={styles.statDivider} />
-            <StatItem value="24/7" label="Support" icon="headset-outline" color="#00FF88" />
+            <StatItem value={t('ui.home.support247', '24/7')} label={t('ui.home.supportLabel', 'Support')} icon="headset-outline" color="#00FF88" />
           </GlassCard>
 
         </View>
@@ -533,6 +639,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       {sheetVisible && sheetService && (() => {
         const meta = PKG_ASSETS[sheetService.id];
         if (!meta) return null;
+        const pkgCopy = getPackageCopy(t, sheetService.id, i18n.language);
         return (
           <Modal transparent animationType="none" visible={sheetVisible} onRequestClose={closeSheet} statusBarTranslucent>
             <TouchableOpacity style={pkgSheet.backdrop} activeOpacity={1} onPress={closeSheet} />
@@ -548,16 +655,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                   {/* Popular badge */}
                   {meta.isPopular && (
                     <View style={pkgSheet.popularPill}>
-                      <Text style={pkgSheet.popularPillText}>⭐ Popular</Text>
+                      <Text style={pkgSheet.popularPillText}>{t('ui.home.popularBadge', '⭐ Popular')}</Text>
                     </View>
                   )}
                   {/* Name */}
                   <Text style={pkgSheet.name}>{sheetService.name}</Text>
                   {/* Description */}
-                  <Text style={pkgSheet.desc}>{meta.richDescription}</Text>
+                  <Text style={pkgSheet.desc}>{pkgCopy.richDescription}</Text>
                   {/* Inclusions */}
-                  <Text style={pkgSheet.inclTitle}>What is included:</Text>
-                  {meta.inclusions.map((item, i) => (
+                  <Text style={pkgSheet.inclTitle}>{t('ui.home.whatIncluded', 'What is included:')}</Text>
+                  {pkgCopy.inclusions.map((item, i) => (
                     <View key={i} style={pkgSheet.inclRow}>
                       <View style={pkgSheet.checkCircle}><Text style={pkgSheet.checkMark}>✓</Text></View>
                       <Text style={pkgSheet.inclText}>{item}</Text>
@@ -565,8 +672,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                   ))}
                   {/* Info badges */}
                   <View style={pkgSheet.badgesRow}>
-                    <View style={pkgSheet.badge}><Text style={pkgSheet.badgeText}>⏱  {meta.hoursMin}–{meta.hoursMax} hours</Text></View>
-                    <View style={pkgSheet.badge}><Text style={pkgSheet.badgeText}>👷  {meta.cleaners} cleaner{meta.cleaners > 1 ? 's' : ''}</Text></View>
+                    <View style={pkgSheet.badge}><Text style={pkgSheet.badgeText}>{t('ui.home.hoursRange', '⏱  {{min}}–{{max}} hours', { values: { min: meta.hoursMin, max: meta.hoursMax } })}</Text></View>
+                    <View style={pkgSheet.badge}><Text style={pkgSheet.badgeText}>{tPlural('ui.home.cleanersCount', meta.cleaners, `👷  ${meta.cleaners} cleaner`)}</Text></View>
                   </View>
                   {/* Book Now CTA */}
                   <TouchableOpacity
@@ -580,7 +687,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                       style={pkgSheet.bookBtn}
                     >
                       <Text style={pkgSheet.bookBtnText}>
-                        Book Now — {Math.round(Number(sheetService.base_price))} AED
+                        {t('ui.home.bookNowPrice', 'Book Now — {{price}} AED', { values: { price: Math.round(Number(sheetService.base_price)) } })}
                       </Text>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -724,8 +831,44 @@ const styles = StyleSheet.create({
   abPrice: { fontSize: 13, fontWeight: '700', color: '#00FF88' },
 
   // ── Package carousel
+  carouselWrap: {
+    position: 'relative',
+  },
+  carouselArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -18,
+    zIndex: 2,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(7,11,24,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  carouselArrowLeft: { left: 4 },
+  carouselArrowRight: { right: 4 },
+  carouselDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  carouselDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  carouselDotActive: {
+    width: 20,
+    backgroundColor: '#00D4FF',
+  },
   pkgCard: {
-    width: 200,
+    width: PKG_CARD_W,
     height: 240,
     borderRadius: 20,
     overflow: 'hidden',

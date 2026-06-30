@@ -41,6 +41,17 @@
       "eas": {
         "projectId": ""
       }
-    }
+    },
+    "plugins": [
+      "expo-localization",
+      "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow SparklePro to take before/after job photos.",
+          "photosPermission": "Allow SparklePro to upload job photos from your gallery."
+        }
+      ]
+    ]
   }
 }

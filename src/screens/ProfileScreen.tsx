@@ -14,7 +14,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useGoToAuth } from '../hooks/useGoToAuth';
 import { supabase } from '../lib/supabase';
+import { useSimpleTranslation } from '../utils/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -146,8 +148,11 @@ const BUBBLES = [
 const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user, profile, isGuest, signOut } = useAuth();
+  const goToAuth = useGoToAuth();
+  const { t, i18n } = useSimpleTranslation();
   const [stats, setStats] = useState<Stats>({ totalCleanings: 0, hoursSaved: 0, rating: 5.0 });
   const [statsLoading, setStatsLoading] = useState(true);
+  const currentLang = i18n.language === 'ru' ? 'ru' : 'en';
 
   // Stable user id (string) — avoids re-running effects when Supabase fires
   // TOKEN_REFRESHED and creates a new User object reference for the same user.
@@ -184,18 +189,23 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const getUserName = () =>
-    profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
+    profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || t('ui.user');
 
-  const getEmail = () => user?.email || 'Guest User';
+  const getEmail = () => user?.email || t('ui.guestUser');
 
   const getMemberSince = () => {
     const raw = profile?.member_since || profile?.created_at;
-    if (!raw) return 'Active member since 2024';
+    if (!raw) {
+      return t('ui.profile.memberSince', 'Member since {{year}}', { values: { year: '2024' } });
+    }
     try {
       const d = new Date(raw);
-      return `Member since ${d.toLocaleString('en', { month: 'long', year: 'numeric' })}`;
+      const month = t(`ui.months.${d.getMonth() + 1}`);
+      return t('ui.profile.memberSince', 'Member since {{year}}', {
+        values: { year: `${month} ${d.getFullYear()}` },
+      });
     } catch {
-      return 'Active member since 2024';
+      return t('ui.profile.memberSince', 'Member since {{year}}', { values: { year: '2024' } });
     }
   };
 
@@ -208,16 +218,15 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   // ── Sign out handler ───────────────────────────────────────────────────────
   const handleSignOut = () => {
     Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
+      t('ui.profile.signOut'),
+      t('ui.profile.signOutConfirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('navigation.cancel'), style: 'cancel' },
         {
-          text: 'Sign Out',
+          text: t('ui.profile.signOut'),
           style: 'destructive',
           onPress: async () => {
             await signOut();
-            navigation.getParent()?.navigate('Auth');
           },
         },
       ]
@@ -229,34 +238,34 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     {
       id: 'personal',
       ionIcon: 'person-outline',
-      title: 'Personal Info',
-      description: 'Update profile',
+      title: t('profile.personalInfo'),
+      description: t('profile.personalInfoDesc'),
       gradient: ['#3B82F6', '#2563EB'],
       onPress: () => navigation.getParent()?.navigate('PersonalInfo'),
     },
     {
       id: 'addresses',
       ionIcon: 'location-outline',
-      title: 'Addresses',
-      description: 'Manage locations',
+      title: t('profile.addresses'),
+      description: t('profile.addressesDesc'),
       gradient: ['#10B981', '#059669'],
       onPress: () => navigation.getParent()?.navigate('Addresses'),
     },
     {
       id: 'payment',
       ionIcon: 'card-outline',
-      title: 'Payment',
-      description: 'Cards & billing',
+      title: t('profile.payment'),
+      description: t('profile.paymentDesc'),
       gradient: ['#9CA3AF', '#6B7280'],
-      badge: 'Soon',
+      badge: t('ui.soon'),
       disabled: true,
       onPress: () => {},
     },
     {
       id: 'help',
       ionIcon: 'help-circle-outline',
-      title: 'Help & Support',
-      description: 'Get help & contact',
+      title: t('profile.help'),
+      description: t('profile.helpDesc'),
       gradient: ['#06B6D4', '#0EA5E9'],
       onPress: () => navigation.getParent()?.navigate('HelpSupport'),
     },
@@ -266,16 +275,16 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     {
       id: 'privacy',
       ionIcon: 'shield-checkmark-outline',
-      title: 'Privacy & Security',
-      description: 'Account security',
+      title: t('profile.privacy'),
+      description: t('profile.privacyDesc'),
       gradient: ['#8B5CF6', '#7C3AED'],
       onPress: () => navigation.getParent()?.navigate('PrivacySecurity'),
     },
     {
       id: 'notifications',
       ionIcon: 'notifications-outline',
-      title: 'Notifications',
-      description: 'Push notifications',
+      title: t('profile.notifications'),
+      description: t('profile.notificationsDesc'),
       gradient: ['#F59E0B', '#D97706'],
       onPress: () => navigation.getParent()?.navigate('Notifications'),
     },
@@ -291,7 +300,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         {/* ── Hero Header ─────────────────────────────────────── */}
         <View style={[styles.hero, { paddingTop: insets.top + 12 }]}>
           <LinearGradient
-            colors={['#6C5DD3', '#36C2CF', '#0ABDC6']}
+            colors={['#2E1B69', '#1F1650', '#120A2E']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
@@ -308,7 +317,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             onPress={() => navigation.navigate('Home')}
             activeOpacity={0.8}
           >
-            <Text style={styles.backBtnText}>‹ Home</Text>
+            <Text style={styles.backBtnText}>{t('ui.home.backHome')}</Text>
           </TouchableOpacity>
 
           {/* Avatar + Name Row */}
@@ -322,7 +331,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
 
             <View style={styles.heroMeta}>
               <Text style={styles.heroName} numberOfLines={1}>
-                {isGuest ? 'Guest User' : getUserName()}
+                {isGuest ? t('ui.guestUser') : getUserName()}
               </Text>
               <View style={styles.pillRow}>
                 <View style={styles.pill}>
@@ -340,7 +349,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
               onPress={() => navigation.getParent()?.navigate('PersonalInfo')}
               activeOpacity={0.8}
             >
-              <Text style={styles.actionBtnGhostText}>✏️  Edit Profile</Text>
+              <Text style={styles.actionBtnGhostText}>{t('ui.profile.editProfile')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionBtnPrimary}
@@ -348,12 +357,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
               activeOpacity={0.8}
             >
               <LinearGradient
-                colors={['#0ABDC6', '#00E6B8']}
+                colors={['#5B3FD4', '#7C3AED']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.actionBtnGradient}
               >
-                <Text style={styles.actionBtnPrimaryText}>+ New Booking</Text>
+                <Text style={styles.actionBtnPrimaryText}>{t('ui.profile.newBooking')}</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -363,25 +372,25 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             <StatCard
               ionIcon="sparkles-outline"
               iconColor="#00D4FF"
-              label="Total Cleanings"
+              label={t('ui.profile.totalCleanings')}
               value={stats.totalCleanings}
-              hint="Completed visits"
+              hint={t('ui.profile.completedVisits')}
               loading={statsLoading}
             />
             <StatCard
               ionIcon="time-outline"
               iconColor="#00FF88"
-              label="Hours Saved"
+              label={t('ui.profile.hoursSaved')}
               value={stats.hoursSaved}
-              hint="vs DIY cleaning"
+              hint={t('ui.profile.vsDiy')}
               loading={statsLoading}
             />
             <StatCard
               ionIcon="star-outline"
               iconColor="#F59E0B"
-              label="Rating"
+              label={t('ui.profile.rating')}
               value={stats.rating.toFixed(1)}
-              hint="Avg from your pros"
+              hint={t('ui.profile.avgFromPros')}
               loading={statsLoading}
             />
           </View>
@@ -391,7 +400,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         <View style={styles.content}>
 
           {/* 2x2 Grid */}
-          <Text style={styles.sectionLabel}>My Account</Text>
+          <Text style={styles.sectionLabel}>{t('ui.profile.myAccount')}</Text>
           <View style={styles.grid}>
             {gridMenuItems.map(item => (
               <TouchableOpacity
@@ -419,7 +428,41 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           </View>
 
           {/* Full-width items */}
-          <Text style={styles.sectionLabel}>Settings</Text>
+          <Text style={styles.sectionLabel}>{t('profile.settings', 'Settings')}</Text>
+
+          {/* Language switcher */}
+          <View style={styles.langCard}>
+            <View style={styles.langHeader}>
+              <LinearGradient colors={['#5B3FD4', '#7C3AED']} style={styles.listIconWrap}>
+                <Ionicons name="language-outline" size={22} color="#FFFFFF" />
+              </LinearGradient>
+              <View style={styles.listMeta}>
+                <Text style={styles.listTitle}>{t('profile.language', 'Language')}</Text>
+                <Text style={styles.listDesc}>{t('profile.languageDesc', 'App display language')}</Text>
+              </View>
+            </View>
+            <View style={styles.langSwitch}>
+              <TouchableOpacity
+                style={[styles.langOption, currentLang === 'en' && styles.langOptionActive]}
+                onPress={() => i18n.changeLanguage('en')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.langOptionText, currentLang === 'en' && styles.langOptionTextActive]}>
+                  {t('ui.english')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.langOption, currentLang === 'ru' && styles.langOptionActive]}
+                onPress={() => i18n.changeLanguage('ru')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.langOptionText, currentLang === 'ru' && styles.langOptionTextActive]}>
+                  {t('ui.russian')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           <View style={styles.listSection}>
             {fullWidthItems.map(item => (
               <TouchableOpacity
@@ -445,7 +488,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             {isGuest ? (
               <TouchableOpacity
                 style={styles.signUpBtn}
-                onPress={() => navigation.getParent()?.navigate('Auth')}
+                onPress={goToAuth}
                 activeOpacity={0.85}
               >
                 <LinearGradient
@@ -454,7 +497,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                   end={{ x: 1, y: 0 }}
                   style={styles.signOutGradient}
                 >
-                  <Text style={styles.signOutText}>🚀  Sign Up to Continue</Text>
+                  <Text style={styles.signOutText}>{t('ui.profile.signUpContinue')}</Text>
                 </LinearGradient>
               </TouchableOpacity>
             ) : (
@@ -464,13 +507,13 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                 activeOpacity={0.85}
               >
                 <Ionicons name="log-out-outline" size={18} color="#EF4444" />
-                <Text style={styles.signOutText}>Sign Out</Text>
+                <Text style={styles.signOutText}>{t('ui.profile.signOut')}</Text>
               </TouchableOpacity>
             )}
           </View>
 
           {/* App version */}
-          <Text style={styles.version}>SparklePro v1.0.0</Text>
+          <Text style={styles.version}>{t('ui.profile.appVersion')}</Text>
         </View>
       </ScrollView>
 
@@ -651,6 +694,49 @@ const styles = StyleSheet.create({
   listTitle: { fontSize: 14, fontWeight: '700', color: '#F1F5F9' },
   listDesc: { fontSize: 12, color: '#94A3B8', marginTop: 2 },
   chevron: { fontSize: 22, color: '#64748B', fontWeight: '300' },
+
+  // Language switcher
+  langCard: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  langHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 14,
+  },
+  langSwitch: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 14,
+    padding: 4,
+    gap: 4,
+  },
+  langOption: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  langOptionActive: {
+    backgroundColor: 'rgba(91,63,212,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(167,139,250,0.45)',
+  },
+  langOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  langOptionTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
 
   // Sign Out
   signOutSection: { marginBottom: 16 },

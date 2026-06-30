@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Linking, Alert,
@@ -6,6 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useSimpleTranslation } from '../../utils/i18n';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -13,59 +14,54 @@ const WHATSAPP_NUMBER = '+971400000000';
 const SUPPORT_EMAIL   = 'support@sparkleuae.com';
 const SUPPORT_PHONE   = '+97140000000';
 
-const POPULAR_TOPICS = [
-  'How to reschedule a booking',
-  'Cancellation policy',
-  'What products do you use?',
-  'How to add an address',
-  'Payment methods accepted',
-  'How to contact my cleaner',
-];
-
-const FAQ: { q: string; a: string }[] = [
-  { q: 'How to reschedule a booking', a: 'You can reschedule a booking up to 24 hours before the appointment. Go to History, tap the booking, and choose "Reschedule".' },
-  { q: 'Cancellation policy', a: 'Free cancellation up to 24 hours before the booking. After that, a 50% cancellation fee applies.' },
-  { q: 'What products do you use?', a: 'We use eco-friendly, hospital-grade cleaning products that are safe for children and pets.' },
-  { q: 'How to add an address', a: 'Go to Profile → Addresses → Add New Address. Enter your building, apartment, and city details.' },
-  { q: 'Payment methods accepted', a: 'We accept all major credit/debit cards, Apple Pay, and Google Pay. Cash payment is available on request.' },
-  { q: 'How to contact my cleaner', a: 'Once your booking is confirmed, you will receive the cleaner\'s contact details via SMS and in-app notification.' },
-];
+const FAQ_IDS = ['1', '2', '3', '4', '5', '6'] as const;
 
 const HelpSupportScreen = ({ navigation }: { navigation: any }) => {
   const insets = useSafeAreaInsets();
+  const { t } = useSimpleTranslation();
   const [search, setSearch]     = useState('');
   const [openFaq, setOpenFaq]   = useState<string | null>(null);
 
+  const faq = useMemo(() =>
+    FAQ_IDS.map(id => ({
+      id,
+      q: t(`ui.help.faq${id}q`),
+      a: t(`ui.help.faq${id}a`),
+    })),
+  [t]);
+
   const openWhatsApp = () => {
     const url = `https://wa.me/${WHATSAPP_NUMBER.replace(/\D/g, '')}`;
-    Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open WhatsApp.'));
+    Linking.openURL(url).catch(() => Alert.alert(t('common.error'), t('ui.help.openWhatsappFailed')));
   };
   const openEmail = () => {
-    Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => Alert.alert('Error', 'Could not open mail app.'));
+    Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => Alert.alert(t('common.error'), t('ui.help.openMailFailed')));
   };
   const openPhone = () => {
-    Linking.openURL(`tel:${SUPPORT_PHONE}`).catch(() => Alert.alert('Error', 'Could not open phone.'));
+    Linking.openURL(`tel:${SUPPORT_PHONE}`).catch(() => Alert.alert(t('common.error'), t('ui.help.openPhoneFailed')));
   };
 
-  const filteredFaq = FAQ.filter(f =>
+  const filteredFaq = faq.filter(f =>
     f.q.toLowerCase().includes(search.toLowerCase()) ||
     f.a.toLowerCase().includes(search.toLowerCase())
   );
 
-  interface QuickItem { icon: IoniconName; label: string; gradient: [string, string]; }
-  const quickItems: QuickItem[] = [
-    { icon: 'book-outline',     label: 'FAQ',          gradient: ['#0891B2', '#22D3EE'] },
-    { icon: 'play-circle',      label: 'How It Works', gradient: ['#2563EB', '#3B82F6'] },
-    { icon: 'locate-outline',   label: 'Track Order',  gradient: ['#10B981', '#34D399'] },
-  ];
+  interface QuickItem { id: string; icon: IoniconName; label: string; gradient: [string, string]; }
+  const quickItems: QuickItem[] = useMemo(() => [
+    { id: 'faq', icon: 'book-outline',     label: t('ui.help.faq'),          gradient: ['#0891B2', '#22D3EE'] },
+    { id: 'how', icon: 'play-circle',      label: t('ui.help.howItWorks'),   gradient: ['#2563EB', '#3B82F6'] },
+    { id: 'track', icon: 'locate-outline', label: t('ui.help.trackOrder'),   gradient: ['#10B981', '#34D399'] },
+  ], [t]);
 
   interface ContactItem { icon: IoniconName; label: string; sub: string; iconBg: string; onPress: () => void; online?: boolean; }
   const contactItems: ContactItem[] = [
-    { icon: 'chatbubbles',      label: 'Live Chat',      sub: 'Chat with us now',        iconBg: '#25D366', onPress: openWhatsApp, online: true },
-    { icon: 'logo-whatsapp',    label: 'WhatsApp',       sub: 'Message on WhatsApp',     iconBg: '#25D366', onPress: openWhatsApp },
-    { icon: 'mail',             label: 'Email Support',  sub: SUPPORT_EMAIL,             iconBg: '#3B82F6', onPress: openEmail },
-    { icon: 'call',             label: 'Call Us',        sub: SUPPORT_PHONE,             iconBg: '#F59E0B', onPress: openPhone },
+    { icon: 'chatbubbles',      label: t('ui.help.liveChat'),      sub: t('ui.help.liveChatDesc'),        iconBg: '#25D366', onPress: openWhatsApp, online: true },
+    { icon: 'logo-whatsapp',    label: t('ui.help.whatsapp'),       sub: t('ui.help.whatsappDesc'),        iconBg: '#25D366', onPress: openWhatsApp },
+    { icon: 'mail',             label: t('ui.help.emailSupport'),  sub: SUPPORT_EMAIL,                    iconBg: '#3B82F6', onPress: openEmail },
+    { icon: 'call',             label: t('ui.help.callUs'),        sub: SUPPORT_PHONE,                    iconBg: '#F59E0B', onPress: openPhone },
   ];
+
+  const displayFaq = search ? filteredFaq : faq;
 
   return (
     <View style={s.root}>
@@ -76,7 +72,7 @@ const HelpSupportScreen = ({ navigation }: { navigation: any }) => {
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.75}>
           <Ionicons name="chevron-back" size={22} color="#F1F5F9" />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Help & Support</Text>
+        <Text style={s.headerTitle}>{t('profile.help')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -89,17 +85,17 @@ const HelpSupportScreen = ({ navigation }: { navigation: any }) => {
             style={s.searchInput}
             value={search}
             onChangeText={setSearch}
-            placeholder="Search for help..."
+            placeholder={t('ui.help.searchPlaceholder')}
             placeholderTextColor="#475569"
           />
         </View>
 
         {/* Quick Help */}
-        <Text style={s.sectionLabel}>QUICK HELP</Text>
+        <Text style={s.sectionLabel}>{t('ui.help.quickHelp')}</Text>
         <View style={s.quickRow}>
           {quickItems.map(item => (
-            <TouchableOpacity key={item.label} style={s.quickCard} activeOpacity={0.8}
-              onPress={() => Alert.alert(item.label, `${item.label} coming soon.`)}>
+            <TouchableOpacity key={item.id} style={s.quickCard} activeOpacity={0.8}
+              onPress={() => Alert.alert(item.label, t('ui.featureComingSoon', `${item.label} coming soon.`, { values: { feature: item.label } }))}>
               <LinearGradient colors={item.gradient} style={s.quickIcon}>
                 <Ionicons name={item.icon} size={26} color="#FFFFFF" />
               </LinearGradient>
@@ -109,12 +105,12 @@ const HelpSupportScreen = ({ navigation }: { navigation: any }) => {
         </View>
 
         {/* Contact Us */}
-        <Text style={s.sectionLabel}>CONTACT US</Text>
+        <Text style={s.sectionLabel}>{t('ui.help.contactUs')}</Text>
         <View style={s.card}>
           {/* Online indicator */}
           <View style={s.onlineRow}>
             <View style={s.onlineDot} />
-            <Text style={s.onlineText}>online</Text>
+            <Text style={s.onlineText}>{t('ui.online')}</Text>
           </View>
           {contactItems.map((item, idx) => (
             <TouchableOpacity key={item.label} style={[s.contactRow, idx < contactItems.length - 1 && s.rowBorder]} onPress={item.onPress} activeOpacity={0.75}>
@@ -131,19 +127,19 @@ const HelpSupportScreen = ({ navigation }: { navigation: any }) => {
         </View>
 
         {/* Popular Topics / FAQ */}
-        <Text style={s.sectionLabel}>POPULAR TOPICS</Text>
+        <Text style={s.sectionLabel}>{t('ui.help.popularTopics')}</Text>
         <View style={s.card}>
-          {(search ? filteredFaq : FAQ).map((item, idx) => (
-            <View key={item.q}>
+          {displayFaq.map((item, idx) => (
+            <View key={item.id}>
               <TouchableOpacity
-                style={[s.faqRow, idx < FAQ.length - 1 && s.rowBorder]}
-                onPress={() => setOpenFaq(openFaq === item.q ? null : item.q)}
+                style={[s.faqRow, idx < displayFaq.length - 1 && s.rowBorder]}
+                onPress={() => setOpenFaq(openFaq === item.id ? null : item.id)}
                 activeOpacity={0.75}
               >
                 <Text style={s.faqQuestion}>{item.q}</Text>
-                <Ionicons name={openFaq === item.q ? 'chevron-up' : 'chevron-forward'} size={16} color="#334155" />
+                <Ionicons name={openFaq === item.id ? 'chevron-up' : 'chevron-forward'} size={16} color="#334155" />
               </TouchableOpacity>
-              {openFaq === item.q && (
+              {openFaq === item.id && (
                 <View style={s.faqAnswer}>
                   <Text style={s.faqAnswerText}>{item.a}</Text>
                 </View>
@@ -151,7 +147,7 @@ const HelpSupportScreen = ({ navigation }: { navigation: any }) => {
             </View>
           ))}
           {search && filteredFaq.length === 0 && (
-            <Text style={s.noResults}>No results for "{search}"</Text>
+            <Text style={s.noResults}>{t('ui.noResults', `No results for "${search}"`, { values: { query: search } })}</Text>
           )}
         </View>
       </ScrollView>
